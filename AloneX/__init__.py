@@ -33,30 +33,30 @@ config.check()
 tasks = []
 boot = time.time()
 
-from anony.core.bot import Bot
+from AloneX.core.bot import Bot
 app = Bot()
 
-from anony.core.dir import ensure_dirs
+from AloneX.core.dir import ensure_dirs
 ensure_dirs()
 
-from anony.core.userbot import Userbot
+from AloneX.core.userbot import Userbot
 userbot = Userbot()
 
-from anony.core.mongo import MongoDB
+from AloneX.core.mongo import MongoDB
 db = MongoDB()
 
-from anony.core.lang import Language
+from AloneX.core.lang import Language
 lang = Language()
 
-from anony.core.telegram import Telegram
-from anony.core.youtube import YouTube
+from AloneX.core.telegram import Telegram
+from AloneX.core.youtube import YouTube
 tg = Telegram()
 yt = YouTube()
 
-from anony.helpers import Queue
+from AloneX.helpers import Queue
 queue = Queue()
 
-from anony.core.calls import TgCall
+from AloneX.core.calls import TgCall
 anon = TgCall()
 
 
