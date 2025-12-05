@@ -1,6 +1,12 @@
-<div align="center">
 
-<h2>AloneXMusic</h2>
+<h2 align="center">
+    𖢵 ᴀʅσηҽ χ мυѕι¢ 𖢵
+
+★ 𝙷𝙴𝚁𝙾𝙺𝚄 + 𝚅𝙿𝚂 ★
+</h2>
+<img src="https://readme-typing-svg.herokuapp.com?color=FF0000&width=420&lines=♦𝙳𝙴𝙿𝙻𝙾𝚈+𝙾𝙽+𝙷𝙴𝚁𝙾𝙺𝚄♦;♨️+𝙽𝙾+𝙷𝙴𝚁𝙾𝙺𝚄+𝙱𝙰𝙽+𝙸𝚂𝚂𝚄𝙴+𝙰𝙻𝚂𝙾+𝚅𝙿𝚂+𝙳𝙴𝙿𝙻𝙾𝚈+📍+𝙿𝚁𝙴𝚂𝙴𝙽𝚃;🎭+𝙿𝙾𝚆𝙴𝚁𝙳+𝙱𝚈+𝗔𝗟𝗢𝗡𝗘+🎭">
+
+
 
 <b>Telegram Group Calls Streaming Bot</b><br>
 Supports YouTube, Spotify, Resso, Apple Music, SoundCloud and M3U8 links.
@@ -17,11 +23,20 @@ Supports YouTube, Spotify, Resso, Apple Music, SoundCloud and M3U8 links.
 <a href="https://www.python.org/">
     <img src="https://img.shields.io/badge/Written%20in-Python-blue?style=for-the-badge&logo=python" alt="Python"/>
 </a>
-<br>
+
 
 <p align="center">
-  <img src="https://litter.catbox.moe/xroqew.jpg">
+  <img src="https://litter.catbox.moe/zo7q6b.jpg">
 </p>
+
+
+
+**𝘿𝙀𝙈𝙊 𝙏𝙀𝙎𝙏 𝘽𝙊𝙏 ➣ [˹ 𝞚𝙡𝞸𝞰𝞮 ✗ 𝙈𝙪𝙨𝙞𝙘™ [ 𝐍ᴏ 𝐀ᴅs ] 🥀­­­­­­­­­­­­­  ](https://t.me/AlonePvtBot)**
+
+
+
+<img src="https://readme-typing-svg.herokuapp.com?color=FF0000&width=420&lines=⚠️𝗙𝗢𝗥𝗞+𝗔𝗟𝗢𝗡𝗘𝗫+𝗥𝗘𝗣𝗢+𝗙𝗜𝗥𝗦𝗧𝗟𝗬⚠️">
+
 
 AloneXMusic lets you stream high-quality and low-latency audio and video playback into telegram group video chats.<br>
 Built with Python, Pyrogram, and Py-TgCalls, it’s optimized for reliability and easy deployment on Heroku, VPS, or Docker.
@@ -41,120 +56,78 @@ Built with Python, Pyrogram, and Py-TgCalls, it’s optimized for reliability an
 <h2>☁️ Manual Deployment</h2>
 
 <h3>✔️ Prerequisites</h3>
+7. 
 
-- <a href="https://www.python.org">Python 3.10+</a> installed  
-- <a href="https://deno.com/">deno</a> & <a href="https://ffmpeg.org//">ffmpeg</a> installed on your system  
-- Required variables mentioned in <a href="https://github.com/TeamAloneOp/AloneX/blob/master/sample.env">sample.env</a>
 
-<details>
-    <summary>
-        <h3>Local / VPS Setup</h3>
-    </summary>
+<h3 align="center">
+    ─「 ᴅᴇᴩʟᴏʏ ᴏɴ ʜᴇʀᴏᴋᴜ 」─
 
-```bash
-git clone https://github.com/TeamAloneOp/AloneX && cd AloneX
+<h3> 𝗛𝗘𝗥𝗢𝗞𝗨 𝗗𝗘𝗣𝗟𝗢𝗬𝗠𝗘𝗡𝗧 𝗕𝗨𝗧𝗧𝗢𝗡 </h3>
+</h3>
 
-# Install dependencies
-pip3 install -U -r requirements.txt
+[![Deploy To Heroku](https://graph.org/file/826b0a2fc82db8328a113.png)](https://dashboard.heroku.com/new?template=https://github.com/TeamAloneOp/AloneX)
 
-# Rename and configure environment variables
-mv sample.env .env
-# Edit .env with your credentials
+<h2 align="center">
 
-# Start the bot
-bash start
-```
-</details>
+🔴「 𝗜𝗙 𝗔𝗡𝗬 𝗘𝗥𝗥𝗢𝗥 𝗧𝗛𝗘𝗡 𝗦𝗘𝗡𝗗 𝗦𝗦 𝗧𝗢 𝗗𝗠 」🔴
+[![ALONE](https://te.legra.ph/file/fa42213a5129d4a26dd3d.jpg)](https://t.me/ForRealAlone)
+</p>
+<h3 align="center">
+    ─「 ᴅᴇᴩʟᴏʏ ᴏɴ ʟᴏᴄᴀʟ ʜᴏsᴛ/ ᴠᴘs 」─
+</h3>
 
-<details>
-    <summary>
-        <h3>Deploy to Heroku</h3>
-    </summary>
+### 🔧 Quick Setup
 
-> Click on the button below to deploy on Heroku<br>
-    <a href="https://dashboard.heroku.com/new?template=https://github.com/TeamAloneOp/AloneX">
-        <img src="https://img.shields.io/badge/Deploy%20On%20Heroku-black?style=for-the-badge&logo=heroku"/>
-    </a>
-</details>
+1. **Upgrade & Update:**
+   ```bash
+   sudo apt-get update && sudo apt-get upgrade -y
+   ```
 
-<hr>
+2. **Install Required Packages:**
+   ```bash
+   sudo apt-get install python3-pip ffmpeg -y
+   ```
+3. **Setting up PIP**
+   ```bash
+   sudo pip3 install -U pip
+   ```
+4. **Installing Node**
+   ```bash
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash && source ~/.bashrc && nvm install v18
+   ```
+5. **Clone the Repository**
+   ```bash
+   git clone https://github.com/TeamAloneOp/AloneX && cd AloneX
+   ```
+6. **Install Requirements**
+   ```bash
+   pip3 install -U -r requirements.txt
+   ```
+7. **Installing tmux**
+    ```bash
+    sudo apt install tmux -y && tmux
+   ```
+8. **Editing Vars:**
+   ```bash
+   bash setup
+   ```
+9. **Run the Bot**
+    ```bash
+    bash start
+    ```
 
-<h2>⚙️ Configuration</h2>
+---
+━━━━━━━━━━━━━━━━━━━━
 
-Edit <code>.env</code> (or set variables in your hosting environment):
-<details>
-    <summary>Here's an example of the .env file</summary>
+<h3 align="center">
+    ─「 sᴜᴩᴩᴏʀᴛ 」─
+</h3>
 
-```env
-API_ID=123456
-API_HASH=abcdef1234567890
-BOT_TOKEN=123456:ABC-DEF
-OWNER_ID=123456789
-LOGGER_ID=-1001234567890
-MONGO_URL=mongodb+srv://
-SESSION=BQgfh...AA
-```
+<p align="center">
+<a href="https://telegram.me/AloneBotSupport"><img src="https://img.shields.io/badge/-Support%20Group-blue.svg?style=for-the-badge&logo=Telegram"></a>
+</p>
 
-> 📝 Check <a href="https://github.com/TeamAloneOp/AloneX/blob/master/config.py">config.py</a> for all available options.
-</details>
+<p align="center">
+<a href="https://telegram.me/AloneUpdates"><img src="https://img.shields.io/badge/-Support%20Channel-blue.svg?style=for-the-badge&logo=Telegram"></a>
+</p>
 
-<hr>
-
-<h2>🧐 Usage</h2>
-
-1. Add the bot to your Telegram group.  
-2. Promote it to <b>admin</b> with invite users permission.  
-3. Use commands in the chat to control playback:
-<details>
-    <summary>Commands overview</summary>
-    <pre>
-/play [song name or link] -> Play audio in the videochat
-/vplay [song name or link] -> Play video in the videochat
-/pause -> Pause playback
-/resume -> Resume playback
-/skip -> Skip to next track
-/stop -> Stop playback
-/seek -> Seeks the stream
-/queue -> Show queue
-    </pre>
-</details>
-
-<hr>
-
-<h2>❤️ Contributing</h2>
-
-Contributions are welcome!
-
-1. Fork the repository.  
-2. Create your branch: <code>git checkout -b feature/new</code>.  
-4. Commit changes: <code>git commit -m 'New feature'</code>.  
-5. Push: <code>git push origin feature/new</code>
-6. Open a Pull Request.
-
-<hr>
-
-<h2>🗒️ License</h2>
-
-This project is licensed under the <b>MIT License</b> — see <a href="https://github.com/TeamAloneOp/AloneX/blob/master/LICENSE">LICENSE</a> for details.
-
-<hr>
-
-<h2>🤞 Updates and support</h2>
-
-- <a href="https://AloneUpdates.t.me">Updates channel</a>
-- <a href="https://AloneBotSupport.t.me">Support group</a>
-
-<hr>
-
-<h2>👀 Acknowledgements</h2>
-
-- Inspired by other open-source Telegram music bots.
-- Thanks to all the <a href="https://github.com/TeamAloneOp/AloneX/graphs/contributors">contributors</a>.
-
-<hr>
-
-<div align="center">
-
-⭐ Enjoying the tunes? <b>Star the repo</b> — feedback keeps the rhythm going!
-
-</div>
