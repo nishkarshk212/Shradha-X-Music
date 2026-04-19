@@ -150,5 +150,10 @@
     "help_5": "再生",
     "help_6": "キュー",
     "help_7": "統計",
-    "help_8": "Sudoers"
+    "help_8": "Sudoers",
+    "aloneowner": "Owner",
+    "audio": "🎵𝐀ᴜᴅɪᴏ",
+    "video": "🎥𝐕ɪᴅᴇᴏ",
+    "enabled": "𝐄ɴᴀʙʟᴇᴅ",
+    "disabled": "𝐃ɪsᴀʙʟᴇᴅ"
 }

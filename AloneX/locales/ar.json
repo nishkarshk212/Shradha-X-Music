@@ -150,5 +150,10 @@
     "help_5": "تشغيل",
     "help_6": "قائمة الانتظار",
     "help_7": "الإحصائيات",
-    "help_8": "Sudoers"
+    "help_8": "Sudoers",
+    "aloneowner": "Owner",
+    "audio": "🎵𝐀ᴜᴅɪᴏ",
+    "video": "🎥𝐕ɪᴅᴇᴏ",
+    "enabled": "𝐄ɴᴀʙʟᴇᴅ",
+    "disabled": "𝐃ɪsᴀʙʟᴇᴅ"
 }

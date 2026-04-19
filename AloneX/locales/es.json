@@ -150,5 +150,10 @@
     "help_5": "Reproducir",
     "help_6": "Cola",
     "help_7": "Estadísticas",
-    "help_8": "Sudoers"
+    "help_8": "Sudoers",
+    "aloneowner": "Owner",
+    "audio": "🎵𝐀ᴜᴅɪᴏ",
+    "video": "🎥𝐕ɪᴅᴇᴏ",
+    "enabled": "𝐄ɴᴀʙʟᴇᴅ",
+    "disabled": "𝐃ɪsᴀʙʟᴇᴅ"
 }
