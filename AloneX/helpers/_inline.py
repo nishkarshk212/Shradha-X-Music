@@ -91,7 +91,12 @@ class Inline:
                 for i, cb in enumerate(cbs)
             ]
             rows = [buttons[i : i + 3] for i in range(0, len(buttons), 3)]
-            rows.append([self.ikb(text=_lang["back"], callback_data="help_back_start")])
+            rows.append(
+                [
+                    self.ikb(text=_lang["back"], callback_data="help_back_start", style=ButtonStyle.PRIMARY),
+                    self.ikb(text=_lang["close"], callback_data="help close", style=ButtonStyle.PRIMARY),
+                ]
+            )
 
         return self.ikm(rows)
 
