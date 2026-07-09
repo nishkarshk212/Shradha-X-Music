@@ -213,7 +213,7 @@ class Inline:
         if private:
             rows += [
                 [
-                    self.ikb(text=lang["aloneowner"], url=f"tg://user?id={config.OWNER_ID}", style=ButtonStyle.DANGER),
+                    self.ikb(text=lang["aloneowner"], url=f"tg://openmessage?user_id={config.OWNER_ID}", style=ButtonStyle.DANGER),
                     self.ikb(
                         text=lang["source"],
                         url="https://github.com/nishkarshk212/Shradha-X-Music", style=ButtonStyle.DANGER
