@@ -2,10 +2,13 @@
 # Licensed under the MIT License.
 # This file is make by @XoDrk
 # ALONE-CODER 
-# Redesigned thumbnail matching premium blue-themed style
+# Redesigned thumbnail matching premium style with dynamic theme coloring
 
 import os
 import aiohttp
+import random
+import re
+import hashlib
 
 from PIL import (
     Image,
@@ -85,8 +88,14 @@ class Thumbnail:
     ) -> str:
 
         try:
+            # Clean HTML tags from requester name (e.g. from pyrogram mention)
+            req_by = user or song.user or "Unknown"
+            req_by = re.sub(r'<[^>]+>', '', req_by).strip()
+            
+            # Cache file names (include hash of requester to avoid stale cache for same song)
+            user_hash = hashlib.md5(req_by.encode('utf-8')).hexdigest()[:6]
             temp = f"cache/raw_{song.id}.jpg"
-            output = f"cache/{song.id}.png"
+            output = f"cache/{song.id}_{user_hash}.png"
 
             if os.path.exists(output):
                 return output
@@ -118,13 +127,28 @@ class Thumbnail:
                 bg
             ).enhance(0.35)
 
-            # Add blue tint overlay
-            blue_overlay = Image.new(
+            # Premium dynamic color themes: (R, G, B)
+            THEMES = [
+                (30, 144, 255),   # Neon Blue
+                (50, 205, 50),    # Lime/Neon Green
+                (255, 20, 147),   # Deep Pink/Magenta
+                (138, 43, 226),   # Blue Violet
+                (255, 69, 0),     # Red Orange
+                (0, 206, 209),    # Dark Turquoise
+                (255, 165, 0),    # Orange
+            ]
+            
+            # Select consistent dynamic theme color based on song.id
+            theme_idx = sum(ord(c) for c in (song.id or "theme")) % len(THEMES)
+            theme_color = THEMES[theme_idx]
+
+            # Add theme tint overlay
+            theme_overlay = Image.new(
                 "RGBA",
                 (self.width, self.height),
-                (30, 100, 220, 60),
+                (theme_color[0], theme_color[1], theme_color[2], 50),
             )
-            bg = Image.alpha_composite(bg, blue_overlay)
+            bg = Image.alpha_composite(bg, theme_overlay)
 
             draw = ImageDraw.Draw(bg)
 
@@ -164,7 +188,7 @@ class Thumbnail:
                 fill=255,
             )
 
-            # Blue glow shadow behind album
+            # Theme glow shadow behind album
             glow_size = self.album_size + 50
             glow = Image.new(
                 "RGBA",
@@ -180,7 +204,7 @@ class Thumbnail:
                     glow_size - 15,
                 ),
                 radius=self.radius + 10,
-                fill=(30, 130, 255, 130),
+                fill=(theme_color[0], theme_color[1], theme_color[2], 130),
             )
 
             glow = glow.filter(
@@ -294,7 +318,6 @@ class Thumbnail:
 
             # Requested By
             info_y += line_spacing
-            req_by = user or song.user or "Unknown"
             req_by_trimmed = self.trim_text(
                 req_by,
                 self.font_value,
@@ -310,7 +333,7 @@ class Thumbnail:
                 (text_x + self.font_label.getlength("Requested By | "), info_y),
                 req_by_trimmed,
                 font=self.font_value,
-                fill=(120, 200, 255),
+                fill=(theme_color[0], theme_color[1], theme_color[2]),
             )
 
             # ─── Progress Bar ───
@@ -331,7 +354,7 @@ class Thumbnail:
                 fill=(100, 100, 100, 120),
             )
 
-            # Progress fill (blue gradient)
+            # Progress fill (theme color)
             progress = 0.05
             draw.rounded_rectangle(
                 (
@@ -341,7 +364,7 @@ class Thumbnail:
                     bar_y + bar_height,
                 ),
                 radius=4,
-                fill=(50, 160, 255, 255),
+                fill=(theme_color[0], theme_color[1], theme_color[2], 255),
             )
 
             # Progress dot (white)
@@ -374,14 +397,14 @@ class Thumbnail:
                 fill=(200, 200, 200),
             )
 
-            # ─── Blue accent border at top and bottom ───
+            # ─── Dynamic theme accent border at top and bottom ───
             draw.rectangle(
                 (0, 0, self.width, 5),
-                fill=(30, 130, 255, 200),
+                fill=(theme_color[0], theme_color[1], theme_color[2], 200),
             )
             draw.rectangle(
                 (0, self.height - 5, self.width, self.height),
-                fill=(30, 130, 255, 200),
+                fill=(theme_color[0], theme_color[1], theme_color[2], 200),
             )
 
             bg = bg.convert("RGB")
