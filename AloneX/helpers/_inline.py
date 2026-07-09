@@ -29,20 +29,21 @@ class Inline:
         style_offset: int = 0,
     ) -> types.InlineKeyboardMarkup:
         keyboard = []
-        if status:
-            keyboard.append(
-                [self.ikb(text=status, callback_data=f"controls status {chat_id}")]
-            )
-        elif timer:
-            keyboard.append(
-                [self.ikb(text=timer, callback_data=f"controls status {chat_id}", style=ButtonStyle.PRIMARY)]
-            )
-
         styles = [
             ButtonStyle.SUCCESS,
             ButtonStyle.PRIMARY,
             ButtonStyle.DANGER,
         ]
+
+        if status:
+            keyboard.append(
+                [self.ikb(text=status, callback_data=f"controls status {chat_id}")]
+            )
+        elif timer:
+            btn_style_timer = styles[(style_offset + 1) % len(styles)]
+            keyboard.append(
+                [self.ikb(text=timer, callback_data=f"controls status {chat_id}", style=btn_style_timer)]
+            )
 
         if not remove:
             btn_style_1 = styles[(style_offset) % len(styles)]

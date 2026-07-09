@@ -56,8 +56,10 @@ async def track_time():
 
 
 async def update_timer(length=10):
+    style_offset = 0
     while True:
         await asyncio.sleep(7)
+        style_offset += 1
         for chat_id in list(db.active_calls):
             if not await db.playing(chat_id):
                 continue
@@ -86,7 +88,7 @@ async def update_timer(length=10):
                     chat_id=chat_id,
                     message_id=message_id,
                     reply_markup=buttons.controls(
-                        chat_id=chat_id, timer=timer, remove=remove
+                        chat_id=chat_id, timer=timer, remove=remove, style_offset=style_offset
                     ),
                 )
             except Exception:
