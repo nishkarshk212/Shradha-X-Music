@@ -19,7 +19,7 @@ API_KEY = config.RAILWAY_YT_API_KEY if config.RAILWAY_YT_API_KEY else os.environ
 DOWNLOAD_DIR = "downloads"
 
 
-async def download_local_ytdlp(video_id: str, video: bool = False) -> str | None:
+async def download_local_ytdlp(video_id: str, video: bool = False, use_cookies: bool = True) -> str | None:
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     ext = "mp4" if video else "mp3"
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
@@ -27,13 +27,19 @@ async def download_local_ytdlp(video_id: str, video: bool = False) -> str | None
         return file_path
 
     cookie_file = None
-    cookie_dir = "AloneX/cookies"
-    if os.path.exists(cookie_dir):
-        cookies_files = [f for f in os.listdir(cookie_dir) if f.endswith(".txt")]
-        if cookies_files:
-            cookie_file = os.path.join(cookie_dir, random.choice(cookies_files))
-    if not cookie_file and os.path.exists("cookies.txt"):
-        cookie_file = "cookies.txt"
+    if use_cookies:
+        cookie_dir = "AloneX/cookies"
+        if os.path.exists(cookie_dir):
+            cookies_files = [f for f in os.listdir(cookie_dir) if f.endswith(".txt")]
+            if cookies_files:
+                cookie_file = os.path.join(cookie_dir, random.choice(cookies_files))
+        if not cookie_file and os.path.exists("cookies.txt"):
+            cookie_file = "cookies.txt"
+
+        # If use_cookies is requested but no cookie file is found, skip this step
+        if not cookie_file:
+            logger.info("Skipping local cookie download step (no cookie files found).")
+            return None
 
     ydl_opts = {
         "format": "bestvideo+bestaudio/best" if video else "bestaudio/best",
@@ -45,6 +51,8 @@ async def download_local_ytdlp(video_id: str, video: bool = False) -> str | None
     if cookie_file:
         ydl_opts["cookiefile"] = cookie_file
         logger.info(f"Using cookies file: {cookie_file} for local yt-dlp download")
+    else:
+        logger.info("Attempting local yt-dlp download without cookies.")
 
     if not video:
         ydl_opts["postprocessors"] = [{
@@ -63,7 +71,7 @@ async def download_local_ytdlp(video_id: str, video: bool = False) -> str | None
         if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
             return file_path
     except Exception as e:
-        logger.error(f"Local yt-dlp download failed for {video_id}: {e}")
+        logger.error(f"Local yt-dlp download (use_cookies={use_cookies}) failed for {video_id}: {e}")
         # Clean up partial files if any
         for f in os.listdir(DOWNLOAD_DIR):
             if f.startswith(video_id) and f != f"{video_id}.{ext}":
@@ -74,23 +82,9 @@ async def download_local_ytdlp(video_id: str, video: bool = False) -> str | None
     return None
 
 
-async def download_song(link: str) -> str:
-    video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
-    if not video_id or len(video_id) < 3:
-        return None
-
-    # Step 1: Try local yt-dlp first
-    logger.info(f"Attempting local yt-dlp download for song: {video_id}")
-    file_path = await download_local_ytdlp(video_id, video=False)
-    if file_path:
-        logger.info(f"Local yt-dlp download successful: {file_path}")
-        return file_path
-
-    # Step 2: Fall back to Railway API key
-    logger.info(f"Local download failed. Falling back to Railway API for song: {video_id}")
+async def download_song_remote(video_id: str) -> str | None:
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
-
     try:
         headers = {"X-API-Key": API_KEY} if API_KEY else {}
         async with aiohttp.ClientSession() as session:
@@ -143,7 +137,7 @@ async def download_song(link: str) -> str:
             return file_path
         return None
     except Exception as e:
-        logger.error(f"Download song error: {e}")
+        logger.error(f"Download song remote error: {e}")
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
@@ -152,23 +146,9 @@ async def download_song(link: str) -> str:
         return None
 
 
-async def download_video(link: str) -> str:
-    video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
-    if not video_id or len(video_id) < 3:
-        return None
-
-    # Step 1: Try local yt-dlp first
-    logger.info(f"Attempting local yt-dlp download for video: {video_id}")
-    file_path = await download_local_ytdlp(video_id, video=True)
-    if file_path:
-        logger.info(f"Local yt-dlp download successful: {file_path}")
-        return file_path
-
-    # Step 2: Fall back to Railway API key
-    logger.info(f"Local download failed. Falling back to Railway API for video: {video_id}")
+async def download_video_remote(video_id: str) -> str | None:
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp4")
-
     try:
         headers = {"X-API-Key": API_KEY} if API_KEY else {}
         async with aiohttp.ClientSession() as session:
@@ -217,13 +197,73 @@ async def download_video(link: str) -> str:
             return file_path
         return None
     except Exception as e:
-        logger.error(f"Download video error: {e}")
+        logger.error(f"Download video remote error: {e}")
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
             except Exception:
                 pass
         return None
+
+
+async def download_song(link: str) -> str:
+    video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
+    if not video_id or len(video_id) < 3:
+        return None
+
+    # Step 1: Try local yt-dlp with cookies first
+    logger.info(f"[Step 1] Attempting local yt-dlp download WITH cookies: {video_id}")
+    file_path = await download_local_ytdlp(video_id, video=False, use_cookies=True)
+    if file_path:
+        logger.info(f"Local cookie download successful: {file_path}")
+        return file_path
+
+    # Step 2: Try remote Railway API
+    logger.info(f"[Step 2] Local cookie download skipped/failed. Trying Railway API: {video_id}")
+    file_path = await download_song_remote(video_id)
+    if file_path:
+        logger.info(f"Railway API download successful: {file_path}")
+        return file_path
+
+    # Step 3: Try local yt-dlp without cookies
+    logger.info(f"[Step 3] Railway API download failed. Trying local yt-dlp WITHOUT cookies: {video_id}")
+    file_path = await download_local_ytdlp(video_id, video=False, use_cookies=False)
+    if file_path:
+        logger.info(f"Local download without cookies successful: {file_path}")
+        return file_path
+
+    logger.error(f"All download methods failed for song: {video_id}")
+    return None
+
+
+async def download_video(link: str) -> str:
+    video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
+    if not video_id or len(video_id) < 3:
+        return None
+
+    # Step 1: Try local yt-dlp with cookies first
+    logger.info(f"[Step 1] Attempting local yt-dlp download WITH cookies: {video_id}")
+    file_path = await download_local_ytdlp(video_id, video=True, use_cookies=True)
+    if file_path:
+        logger.info(f"Local cookie download successful: {file_path}")
+        return file_path
+
+    # Step 2: Try remote Railway API
+    logger.info(f"[Step 2] Local cookie download skipped/failed. Trying Railway API: {video_id}")
+    file_path = await download_video_remote(video_id)
+    if file_path:
+        logger.info(f"Railway API download successful: {file_path}")
+        return file_path
+
+    # Step 3: Try local yt-dlp without cookies
+    logger.info(f"[Step 3] Railway API download failed. Trying local yt-dlp WITHOUT cookies: {video_id}")
+    file_path = await download_local_ytdlp(video_id, video=True, use_cookies=False)
+    if file_path:
+        logger.info(f"Local download without cookies successful: {file_path}")
+        return file_path
+
+    logger.error(f"All download methods failed for video: {video_id}")
+    return None
 
 
 class YouTube:
