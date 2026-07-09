@@ -59,6 +59,11 @@
             "description": "Railway YouTube API URL",
             "value": "https://youtube-api-music-production-77fb.up.railway.app",
             "required": false
+        },
+        "COOKIES_DATA": {
+            "description": "Base64 encoded cookies.txt Netscape format file content to bypass bot detection",
+            "value": "",
+            "required": false
         }
     }
 }

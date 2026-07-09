@@ -3,6 +3,8 @@ import os
 import re
 import aiohttp
 import random
+import asyncio
+import yt_dlp
 from py_yt import VideosSearch, Playlist
 from AloneX import logger, config
 from AloneX.helpers import Track, utils
@@ -17,20 +19,81 @@ API_KEY = config.RAILWAY_YT_API_KEY if config.RAILWAY_YT_API_KEY else os.environ
 DOWNLOAD_DIR = "downloads"
 
 
+async def download_local_ytdlp(video_id: str, video: bool = False) -> str | None:
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    ext = "mp4" if video else "mp3"
+    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        return file_path
+
+    cookie_file = None
+    cookie_dir = "AloneX/cookies"
+    if os.path.exists(cookie_dir):
+        cookies_files = [f for f in os.listdir(cookie_dir) if f.endswith(".txt")]
+        if cookies_files:
+            cookie_file = os.path.join(cookie_dir, random.choice(cookies_files))
+    if not cookie_file and os.path.exists("cookies.txt"):
+        cookie_file = "cookies.txt"
+
+    ydl_opts = {
+        "format": "bestvideo+bestaudio/best" if video else "bestaudio/best",
+        "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
+        "quiet": True,
+        "no_warnings": True,
+        "nocheckcertificate": True,
+    }
+    if cookie_file:
+        ydl_opts["cookiefile"] = cookie_file
+        logger.info(f"Using cookies file: {cookie_file} for local yt-dlp download")
+
+    if not video:
+        ydl_opts["postprocessors"] = [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }]
+
+    try:
+        loop = asyncio.get_event_loop()
+        def _download():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+        await loop.run_in_executor(None, _download)
+
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            return file_path
+    except Exception as e:
+        logger.error(f"Local yt-dlp download failed for {video_id}: {e}")
+        # Clean up partial files if any
+        for f in os.listdir(DOWNLOAD_DIR):
+            if f.startswith(video_id) and f != f"{video_id}.{ext}":
+                try:
+                    os.remove(os.path.join(DOWNLOAD_DIR, f))
+                except:
+                    pass
+    return None
+
+
 async def download_song(link: str) -> str:
     video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
     if not video_id or len(video_id) < 3:
         return None
 
+    # Step 1: Try local yt-dlp first
+    logger.info(f"Attempting local yt-dlp download for song: {video_id}")
+    file_path = await download_local_ytdlp(video_id, video=False)
+    if file_path:
+        logger.info(f"Local yt-dlp download successful: {file_path}")
+        return file_path
+
+    # Step 2: Fall back to Railway API key
+    logger.info(f"Local download failed. Falling back to Railway API for song: {video_id}")
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
-    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-        return file_path
 
     try:
         headers = {"X-API-Key": API_KEY} if API_KEY else {}
         async with aiohttp.ClientSession() as session:
-            # First get the download URL from Railway API
             async with session.get(
                 f"{API_URL}/download",
                 params={"id": video_id, "type": "audio"},
@@ -49,7 +112,6 @@ async def download_song(link: str) -> str:
                 audio_url = download_info.get("best_audio_url") or download_info.get("best_video_url")
 
                 if not audio_url:
-                    # Fallback: try /stream endpoint
                     async with session.get(
                         f"{API_URL}/stream",
                         params={"id": video_id},
@@ -66,7 +128,6 @@ async def download_song(link: str) -> str:
                     logger.error("No audio URL found from Railway API")
                     return None
 
-            # Download the actual audio file
             async with session.get(
                 audio_url,
                 timeout=aiohttp.ClientTimeout(total=300)
@@ -96,15 +157,21 @@ async def download_video(link: str) -> str:
     if not video_id or len(video_id) < 3:
         return None
 
+    # Step 1: Try local yt-dlp first
+    logger.info(f"Attempting local yt-dlp download for video: {video_id}")
+    file_path = await download_local_ytdlp(video_id, video=True)
+    if file_path:
+        logger.info(f"Local yt-dlp download successful: {file_path}")
+        return file_path
+
+    # Step 2: Fall back to Railway API key
+    logger.info(f"Local download failed. Falling back to Railway API for video: {video_id}")
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp4")
-    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-        return file_path
 
     try:
         headers = {"X-API-Key": API_KEY} if API_KEY else {}
         async with aiohttp.ClientSession() as session:
-            # Try /video/hq for best quality video
             async with session.get(
                 f"{API_URL}/video/hq",
                 params={"id": video_id},
@@ -119,7 +186,6 @@ async def download_video(link: str) -> str:
                         video_url = stream_info.get("url") or stream_info.get("video_url")
 
                 if not video_url:
-                    # Fallback: try /download endpoint
                     async with session.get(
                         f"{API_URL}/download",
                         params={"id": video_id, "type": "video"},
@@ -136,7 +202,6 @@ async def download_video(link: str) -> str:
                     logger.error("No video URL found from Railway API")
                     return None
 
-            # Download the actual video file
             async with session.get(
                 video_url,
                 timeout=aiohttp.ClientTimeout(total=600)
@@ -170,6 +235,19 @@ class YouTube:
             r"([A-Za-z0-9_-]{11}|PL[A-Za-z0-9_-]+)([&?][^\s]*)?"
         )
         self.cookie_dir = "AloneX/cookies"
+
+        # Dynamically load COOKIES_DATA env var if present (base64 cookies helper)
+        cookies_data = os.environ.get("COOKIES_DATA")
+        if cookies_data:
+            try:
+                import base64
+                decoded = base64.b64decode(cookies_data).decode("utf-8")
+                os.makedirs(self.cookie_dir, exist_ok=True)
+                with open(os.path.join(self.cookie_dir, "cookie_0.txt"), "w") as f:
+                    f.write(decoded)
+                logger.info("Successfully loaded cookies from COOKIES_DATA environment variable.")
+            except Exception as e:
+                logger.error(f"Error decoding COOKIES_DATA environment variable: {e}")
 
     def get_cookies(self):
         if not os.path.exists(self.cookie_dir):
