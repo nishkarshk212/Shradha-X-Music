@@ -6,21 +6,21 @@ load_dotenv()
 
 class Config:
     def __init__(self):
-        self.API_ID = int(getenv("API_ID", "17596251"))
-        self.API_HASH = getenv("API_HASH", "e58343b4c0193e293e391daf97603fcd")
+        self.API_ID = int(getenv("API_ID", "31390854"))
+        self.API_HASH = getenv("API_HASH", "eeeefbc0f02b727c67fbdb0c3aeb2b36")
 
-        self.BOT_TOKEN = getenv("BOT_TOKEN", "Apna Bot Token")
-        self.MONGO_URL = getenv("MONGO_URL", "Apna Mongo Db Dalo")
+        self.BOT_TOKEN = getenv("BOT_TOKEN", "")
+        self.MONGO_URL = getenv("MONGO_URL", "")
 
-        self.LOGGER_ID = int(getenv("LOGGER_ID", "Apna Log Group Id Dalo"))
-        self.OWNER_ID = int(getenv("OWNER_ID", "Owner I'd dalo"))
+        self.LOGGER_ID = int(getenv("LOGGER_ID", "-1004304855875"))
+        self.OWNER_ID = int(getenv("OWNER_ID", "8784193595"))
         
-        self.SESSION1 = getenv("SESSION", "Apna String Dalo")
+        self.SESSION1 = getenv("SESSION", "")
         self.SESSION2 = getenv("SESSION2", None)
         self.SESSION3 = getenv("SESSION3", None)
 
-        self.SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/AloneUpdates")
-        self.SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/AloneBotSupport")
+        self.SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/titanic_network")
+        self.SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/+WAOT47P-70QwOTBl")
 
         self.AUTO_END: bool = getenv("AUTO_END", False)
         self.AUTO_LEAVE: bool = getenv("AUTO_LEAVE", False)
@@ -35,7 +35,11 @@ class Config:
         ]
         self.DEFAULT_THUMB = getenv("DEFAULT_THUMB", "https://te.legra.ph/file/3e40a408286d4eda24191.jpg")
         self.PING_IMG = getenv("PING_IMG", "https://files.catbox.moe/haagg2.png")
-        self.START_IMG = getenv("START_IMG", "https://files.catbox.moe/zvziwk.jpg")
+        self.START_IMG = getenv("START_IMG", "https://files.catbox.moe/ziyudk.png")
+
+        # Railway YouTube API
+        self.RAILWAY_YT_API_KEY = getenv("RAILWAY_YT_API_KEY", "")
+        self.RAILWAY_YT_API_URL = getenv("RAILWAY_YT_API_URL", "https://youtube-api-music-production-77fb.up.railway.app")
 
     def check(self):
         missing = [

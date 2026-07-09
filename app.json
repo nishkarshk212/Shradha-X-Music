@@ -39,6 +39,26 @@
             "description": "A Pyrogram v2 String Session from @StringFatherBot on Telegram.",
             "value": "",
             "required": true
+        },
+        "SUPPORT_CHANNEL": {
+            "description": "Support channel link",
+            "value": "https://t.me/titanic_network",
+            "required": false
+        },
+        "SUPPORT_CHAT": {
+            "description": "Support chat link",
+            "value": "https://t.me/+WAOT47P-70QwOTBl",
+            "required": false
+        },
+        "RAILWAY_YT_API_KEY": {
+            "description": "API key for Railway YouTube API service",
+            "value": "",
+            "required": false
+        },
+        "RAILWAY_YT_API_URL": {
+            "description": "Railway YouTube API URL",
+            "value": "https://youtube-api-music-production-77fb.up.railway.app",
+            "required": false
         }
     }
 }
