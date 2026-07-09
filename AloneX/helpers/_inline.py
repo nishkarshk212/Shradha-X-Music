@@ -26,6 +26,7 @@ class Inline:
         timer: str = None,
         remove: bool = False,
         _lang: dict = None,
+        style_offset: int = 0,
     ) -> types.InlineKeyboardMarkup:
         keyboard = []
         if status:
@@ -37,38 +38,55 @@ class Inline:
                 [self.ikb(text=timer, callback_data=f"controls status {chat_id}", style=ButtonStyle.PRIMARY)]
             )
 
+        styles = [
+            ButtonStyle.SUCCESS,
+            ButtonStyle.PRIMARY,
+            ButtonStyle.DANGER,
+        ]
+
         if not remove:
+            btn_style_1 = styles[(style_offset) % len(styles)]
+            btn_style_2 = styles[(style_offset + 1) % len(styles)]
+            btn_style_3 = styles[(style_offset + 2) % len(styles)]
+            btn_style_4 = styles[(style_offset + 1) % len(styles)]
+            btn_style_5 = styles[(style_offset) % len(styles)]
+            
             keyboard.append(
                 [
-                    self.ikb(text="▷", callback_data=f"controls resume {chat_id}", style=ButtonStyle.SUCCESS),
-                    self.ikb(text="II", callback_data=f"controls pause {chat_id}", style=ButtonStyle.SUCCESS),
-                    self.ikb(text="⥁", callback_data=f"controls replay {chat_id}", style=ButtonStyle.PRIMARY),
-                    self.ikb(text="‣‣I", callback_data=f"controls skip {chat_id}", style=ButtonStyle.DANGER),
-                    self.ikb(text="▢", callback_data=f"controls stop {chat_id}", style=ButtonStyle.DANGER),
+                    self.ikb(text="▷", callback_data=f"controls resume {chat_id}", style=btn_style_1),
+                    self.ikb(text="II", callback_data=f"controls pause {chat_id}", style=btn_style_2),
+                    self.ikb(text="⥁", callback_data=f"controls replay {chat_id}", style=btn_style_3),
+                    self.ikb(text="‣‣I", callback_data=f"controls skip {chat_id}", style=btn_style_4),
+                    self.ikb(text="▢", callback_data=f"controls stop {chat_id}", style=btn_style_5),
                 ]
             )
             if not _lang:
                 _lang = lang.languages["en"]
+            
+            btn_style_add = styles[(style_offset + 2) % len(styles)]
             keyboard.append(
                 [
                     self.ikb(
                         text=_lang.get("add_me", "✙ 𝐀ᴅᴅ 𝐌є 𝐈η 𝐘συʀ 𝐆ʀσυᴘ ✙"),
                         url=f"https://t.me/{app.username}?startgroup=true",
-                        style=ButtonStyle.PRIMARY,
+                        style=btn_style_add,
                     ),
                 ]
             )
+            
+            btn_style_channel = styles[(style_offset + 1) % len(styles)]
+            btn_style_close = styles[(style_offset) % len(styles)]
             keyboard.append(
                 [
                     self.ikb(
                         text=_lang.get("channel", "˹ 𝐔ᴘᴅᴧᴛєs ˼"),
                         url=config.SUPPORT_CHANNEL,
-                        style=ButtonStyle.SUCCESS,
+                        style=btn_style_channel,
                     ),
                     self.ikb(
                         text=_lang.get("close", "⌯ 𝐂ʟσsє ⌯"),
                         callback_data="help close",
-                        style=ButtonStyle.DANGER,
+                        style=btn_style_close,
                     ),
                 ]
             )

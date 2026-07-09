@@ -48,6 +48,12 @@ def can_manage_vc(func):
         )
         user_id = update.from_user.id
 
+        if isinstance(update, types.Message) and await db.get_cmd_delete(chat_id):
+            try:
+                await update.delete()
+            except:
+                pass
+
         if user_id in app.sudoers:
             return await func(_, update, *args, **kwargs)
 

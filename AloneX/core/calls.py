@@ -42,6 +42,31 @@ class TgCall(PyTgCalls):
             pass
 
 
+    async def _cycle_buttons(self, chat_id: int, message_id: int) -> None:
+        import asyncio
+        from pyrogram.errors import MessageNotModified, FloodWait
+        
+        style_offset = 0
+        while await db.get_call(chat_id) and await db.playing(chat_id):
+            await asyncio.sleep(5)
+            # Verify call is still active
+            if not await db.get_call(chat_id) or not await db.playing(chat_id):
+                break
+            style_offset += 1
+            try:
+                keyboard = buttons.controls(chat_id, style_offset=style_offset)
+                await app.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=keyboard,
+                )
+            except MessageNotModified:
+                pass
+            except FloodWait as e:
+                await asyncio.sleep(e.value)
+            except Exception:
+                break
+
     async def play_media(
         self,
         chat_id: int,
@@ -82,6 +107,7 @@ class TgCall(PyTgCalls):
             if not seek_time:
                 media.time = 1
                 await db.add_call(chat_id)
+                await db.increment_played()
                 text = _lang["play_media"].format(
                     media.url,
                     media.title,
@@ -97,6 +123,7 @@ class TgCall(PyTgCalls):
                         ),
                         reply_markup=keyboard,
                     )
+                    media.message_id = message.id
                 except MessageIdInvalid:
                     media.message_id = (await app.send_photo(
                         chat_id=chat_id,
@@ -104,6 +131,8 @@ class TgCall(PyTgCalls):
                         caption=text,
                         reply_markup=keyboard,
                     )).id
+                import asyncio
+                asyncio.create_task(self._cycle_buttons(chat_id, media.message_id))
         except FileNotFoundError:
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             await self.play_next(chat_id)

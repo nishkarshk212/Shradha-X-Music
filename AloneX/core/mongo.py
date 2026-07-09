@@ -275,6 +275,18 @@ class MongoDB:
         doc = await self.cache.find_one({"_id": "sudoers"})
         return doc.get("user_ids", []) if doc else []
 
+    # TOTAL PLAYED SONGS METHODS
+    async def get_total_played(self) -> int:
+        doc = await self.cache.find_one({"_id": "total_played"})
+        return doc.get("count", 0) if doc else 0
+
+    async def increment_played(self) -> None:
+        await self.cache.update_one(
+            {"_id": "total_played"},
+            {"$inc": {"count": 1}},
+            upsert=True,
+        )
+
     # USER METHODS
     async def is_user(self, user_id: int) -> bool:
         return user_id in self.users
