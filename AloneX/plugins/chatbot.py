@@ -3,6 +3,7 @@
 # This file is part of AloneXMusic
 
 import aiohttp
+import re
 from pyrogram import filters, types, enums
 from AloneX import app, db, lang, config
 from AloneX.helpers import admin_check, can_manage_vc
@@ -104,7 +105,10 @@ async def chatbot_reply_handler(client, m: types.Message):
         "role": "system", 
         "content": (
             f"You are {bot_user.first_name}, a friendly, intelligent, and helpful AI assistant and music companion for Telegram. "
-            "Reply concisely and directly to user messages."
+            "Reply concisely and directly to user messages. "
+            "Additionally, you can control music playback. If the user requests to pause, resume, skip, or stop the playing music, "
+            "you MUST start your reply with '[CONTROL: pause]', '[CONTROL: resume]', '[CONTROL: skip]', or '[CONTROL: stop]' accordingly. "
+            "Example: '[CONTROL: skip] Skipping the track for you!'"
         )
     }
     
@@ -135,7 +139,28 @@ async def chatbot_reply_handler(client, m: types.Message):
                     if choices:
                         reply_content = choices[0].get("message", {}).get("content", "").strip()
                         if reply_content:
-                            # Reply to user
+                            # Check for control directives
+                            control_match = re.match(r"^\[CONTROL:\s*(\w+)\]\s*(.*)$", reply_content, re.IGNORECASE)
+                            if control_match:
+                                action = control_match.group(1).lower()
+                                friendly_reply = control_match.group(2).strip()
+                                
+                                # Execute corresponding control function
+                                if action == "pause":
+                                    if await db.playing(chat_id):
+                                        await anon.pause(chat_id)
+                                elif action == "resume":
+                                    if not await db.playing(chat_id):
+                                        await anon.resume(chat_id)
+                                elif action == "skip":
+                                    await anon.play_next(chat_id)
+                                elif action == "stop":
+                                    await anon.stop(chat_id)
+                                    
+                                await m.reply_text(friendly_reply)
+                                return
+
+                            # Reply to user normally
                             await m.reply_text(reply_content)
                             
                             # Append to history
