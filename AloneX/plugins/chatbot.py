@@ -118,9 +118,8 @@ async def chatbot_reply_handler(client, m: types.Message):
         "Content-Type": "application/json",
     }
     
-    # We will try the user's preferred model (deepseek/deepseek-r1-0528) first, then fallback to other active free models to bypass Venice rate limits.
+    # Try active free models on OpenRouter (never consumes paid credits)
     for model_name in [
-        "deepseek/deepseek-r1-0528", 
         "qwen/qwen3-next-80b-a3b-instruct:free", 
         "google/gemma-4-31b-it:free", 
         "qwen/qwen3-coder:free", 
