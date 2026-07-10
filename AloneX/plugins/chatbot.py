@@ -69,50 +69,64 @@ async def ananya_chatbot(client, m: types.Message):
     # Append current user message
     messages.append({"role": "user", "content": query_text})
 
-    # Call OpenRouter API
+    # Call OpenRouter API with fallback chain
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {config.OPENROUTER_API_KEY.strip()}",
         "Content-Type": "application/json",
     }
-    payload = {
-        "model": MODEL,
-        "messages": messages,
-        "reasoning": {"enabled": True}
-    }
 
-    try:
-        from AloneX import logger
-        logger.info(f"[Shradha] Querying {MODEL}...")
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url, headers=headers, json=payload,
-                timeout=aiohttp.ClientTimeout(total=20)
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    choices = data.get("choices", [])
-                    if choices:
-                        message_obj = choices[0].get("message", {})
-                        reply_content = (message_obj.get("content") or "").strip()
-                        reasoning_details = message_obj.get("reasoning_details")
+    # Fallback list: try primary first, then rotate through active free models
+    fallback_models = [
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "tencent/hy3:free",
+        "liquid/lfm-2.5-1.2b-instruct:free",
+        "google/gemma-4-31b-it:free",
+        "qwen/qwen3-coder:free",
+        "meta-llama/llama-3.2-3b-instruct:free",
+    ]
 
-                        if reply_content:
-                            await m.reply_text(reply_content)
+    from AloneX import logger
 
-                            # Save to history preserving reasoning_details
-                            history.append({"role": "user", "content": query_text})
-                            history.append({
-                                "role": "assistant",
-                                "content": reply_content,
-                                "reasoning_details": reasoning_details
-                            })
-                            await save_history(chat_id, history)
-                        else:
-                            logger.warning(f"[Shradha] Empty content from {MODEL}")
-                else:
-                    body = await resp.text()
-                    logger.error(f"[Shradha] {MODEL} status {resp.status}: {body}")
-    except Exception as e:
-        from AloneX import logger
-        logger.error(f"[Shradha] Request failed: {e}")
+    for model_name in fallback_models:
+        payload = {
+            "model": model_name,
+            "messages": messages,
+        }
+        # Enable reasoning only for models that support it
+        if any(x in model_name for x in ["nemotron", "r1", "qwen3.7"]):
+            payload["reasoning"] = {"enabled": True}
+
+        try:
+            logger.info(f"[Shradha] Querying {model_name}...")
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url, headers=headers, json=payload,
+                    timeout=aiohttp.ClientTimeout(total=20)
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        choices = data.get("choices", [])
+                        if choices:
+                            message_obj = choices[0].get("message", {})
+                            reply_content = (message_obj.get("content") or "").strip()
+                            reasoning_details = message_obj.get("reasoning_details")
+
+                            if reply_content:
+                                await m.reply_text(reply_content)
+                                # Save history with reasoning_details preserved
+                                history.append({"role": "user", "content": query_text})
+                                history.append({
+                                    "role": "assistant",
+                                    "content": reply_content,
+                                    "reasoning_details": reasoning_details
+                                })
+                                await save_history(chat_id, history)
+                                return  # success — stop trying further models
+                        logger.warning(f"[Shradha] Empty content from {model_name}, trying next...")
+                    else:
+                        body = await resp.text()
+                        logger.error(f"[Shradha] {model_name} status {resp.status}: {body}")
+        except Exception as e:
+            logger.error(f"[Shradha] {model_name} failed: {e}")
+
