@@ -1,7 +1,7 @@
-from pyrogram import filters, types
+from pyrogram import filters, types, enums
 from pyrogram.enums import ButtonStyle
 from AloneX import app, db, lang
-from AloneX.helpers import admin_check, buttons
+from AloneX.helpers import buttons
 
 # MongoDB collection for chat-level feature settings
 settings_db = db.db.settings
@@ -67,18 +67,29 @@ def build_settings_keyboard(chat_id: int, settings: dict) -> types.InlineKeyboar
     ]
     return buttons.ikm(keyboard)
 
-@app.on_message(filters.command(["settings"]) & filters.group & ~app.bl_users)
+@app.on_message(filters.command(["settings"]) & ~app.bl_users)
 @lang.language()
-@admin_check
 async def settings_menu(_, m: types.Message):
     chat_id = m.chat.id
+    is_group = (m.chat.type in [enums.ChatType.SUPERGROUP, enums.ChatType.GROUP])
+    
+    if is_group:
+        # Perform admin check manually for groups
+        admins = await db.get_admins(chat_id)
+        if m.from_user.id not in app.sudoers and m.from_user.id not in admins:
+            try:
+                return await m.reply_text(m.lang["user_no_perms"])
+            except Exception:
+                return await m.reply_text("❌ You don't have permission to use settings.")
+            
     settings = await get_chat_settings(chat_id)
     keyboard = build_settings_keyboard(chat_id, settings)
     
+    chat_title = m.chat.title if is_group else m.from_user.first_name
     await m.reply_text(
-        f"**AloneX Group Settings for {m.chat.title}**\n\n"
+        f"**AloneX settings for {chat_title}**\n\n"
         "🤖 **AI Settings:**\n"
-        "• Chatbot: Automatic group conversational replies (Cute Girl Persona)\n\n"
+        "• Chatbot: Automatic conversational replies (Cute Girl Persona)\n\n"
         "⚙️ **Main Settings:**\n"
         "• Quick Play: Instant URL stream without downloading\n"
         "• Auto Cleanup: Auto-delete downloads after playing",
@@ -86,12 +97,18 @@ async def settings_menu(_, m: types.Message):
     )
 
 @app.on_callback_query(filters.regex("^set_toggle") & ~app.bl_users)
-@admin_check
 async def toggle_setting_callback(_, query: types.CallbackQuery):
     args = query.data.split()
     chat_id = int(args[1])
     feature = args[2]
     
+    # Perform manual admin check for groups
+    is_group = (chat_id < 0)
+    if is_group:
+        admins = await db.get_admins(chat_id)
+        if query.from_user.id not in app.sudoers and query.from_user.id not in admins:
+            return await query.answer("❌ You don't have permission to edit settings.", show_alert=True)
+            
     # Toggle setting
     settings = await toggle_chat_setting(chat_id, feature)
     keyboard = build_settings_keyboard(chat_id, settings)
