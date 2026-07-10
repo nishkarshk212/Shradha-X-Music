@@ -1,11 +1,7 @@
-# Copyright (c) 2025 TheHamkerAlone
-# Licensed under the MIT License.
-# This file is part of AloneXMusic
-
 from pyrogram import filters, types
 from pyrogram.enums import ButtonStyle
 from AloneX import app, db, lang
-from AloneX.helpers import admin_check
+from AloneX.helpers import admin_check, buttons
 
 # MongoDB collection for chat-level feature settings
 settings_db = db.db.settings
@@ -41,35 +37,35 @@ async def toggle_chat_setting(chat_id: int, feature: str) -> dict:
     return settings
 
 def build_settings_keyboard(chat_id: int, settings: dict) -> types.InlineKeyboardMarkup:
-    """Build the settings dashboard with Green/Red colored buttons."""
-    # Enums style config
-    btn_chatbot = types.InlineKeyboardButton(
-        text=f"🤖 Chatbot: {'ON (Green)' if settings['chatbot'] else 'OFF (Red)'}",
+    """Build the settings dashboard with Green/Red colored buttons using helper.buttons."""
+    btn_chatbot = buttons.ikb(
+        text=f"🤖 Chatbot: {'ON' if settings['chatbot'] else 'OFF'}",
         callback_data=f"set_toggle {chat_id} chatbot",
         style=ButtonStyle.SUCCESS if settings["chatbot"] else ButtonStyle.DANGER
     )
     
-    btn_lyrics = types.InlineKeyboardButton(
-        text=f"🎙️ Live Lyrics: {'ON (Green)' if settings['lyrics'] else 'OFF (Red)'}",
+    btn_lyrics = buttons.ikb(
+        text=f"🎙️ Live Lyrics: {'ON' if settings['lyrics'] else 'OFF'}",
         callback_data=f"set_toggle {chat_id} lyrics",
         style=ButtonStyle.SUCCESS if settings["lyrics"] else ButtonStyle.DANGER
     )
     
-    btn_cleanup = types.InlineKeyboardButton(
-        text=f"🗑️ Auto Cleanup: {'ON (Green)' if settings['cleanup'] else 'OFF (Red)'}",
+    btn_cleanup = buttons.ikb(
+        text=f"🗑️ Auto Cleanup: {'ON' if settings['cleanup'] else 'OFF'}",
         callback_data=f"set_toggle {chat_id} cleanup",
         style=ButtonStyle.SUCCESS if settings["cleanup"] else ButtonStyle.DANGER
     )
     
-    btn_quickplay = types.InlineKeyboardButton(
-        text=f"⚡ Quick Play: {'ON (Green)' if settings['quickplay'] else 'OFF (Red)'}",
+    btn_quickplay = buttons.ikb(
+        text=f"⚡ Quick Play: {'ON' if settings['quickplay'] else 'OFF'}",
         callback_data=f"set_toggle {chat_id} quickplay",
         style=ButtonStyle.SUCCESS if settings["quickplay"] else ButtonStyle.DANGER
     )
     
-    btn_close = types.InlineKeyboardButton(
+    btn_close = buttons.ikb(
         text="❌ Close Menu",
-        callback_data="set_close"
+        callback_data="set_close",
+        style=ButtonStyle.DANGER
     )
     
     keyboard = [
@@ -79,7 +75,7 @@ def build_settings_keyboard(chat_id: int, settings: dict) -> types.InlineKeyboar
         [btn_quickplay],
         [btn_close]
     ]
-    return types.InlineKeyboardMarkup(keyboard)
+    return buttons.ikm(keyboard)
 
 @app.on_message(filters.command(["settings"]) & filters.group & ~app.bl_users)
 @lang.language()
