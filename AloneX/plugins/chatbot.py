@@ -112,7 +112,8 @@ async def chatbot_reply_handler(client, m: types.Message):
         "Content-Type": "application/json",
     }
     
-    for model_name in ["meta-llama/llama-3.1-8b-instruct", "google/gemini-2.5-flash:free", "openrouter/free"]:
+    # Try active free models on OpenRouter
+    for model_name in ["meta-llama/llama-3-8b-instruct:free", "google/gemma-2-9b-it:free", "meta-llama/llama-3.3-70b-instruct:free"]:
         payload = {
             "model": model_name,
             "messages": messages,
@@ -128,8 +129,11 @@ async def chatbot_reply_handler(client, m: types.Message):
                         data = await resp.json()
                         choices = data.get("choices", [])
                         if choices:
-                            reply_content = choices[0].get("message", {}).get("content", "").strip()
+                            message_obj = choices[0].get("message", {})
+                            reply_content = message_obj.get("content")
                             if reply_content:
+                                reply_content = reply_content.strip()
+                                
                                 # Check for control directives
                                 control_match = re.match(r"^\[CONTROL:\s*(\w+)\]\s*(.*)$", reply_content, re.IGNORECASE)
                                 if control_match:
