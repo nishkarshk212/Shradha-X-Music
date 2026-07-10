@@ -1,5 +1,5 @@
 # Copyright (c) 2025 AloneX Music Bot
-# Chatbot plugin - Ananya (NVIDIA Nemotron Ultra 550B)
+# Chatbot plugin - Shradha (NVIDIA Nemotron Ultra 550B)
 
 import aiohttp
 import re
@@ -9,8 +9,8 @@ from AloneX import app, db, config
 # MongoDB collection for chat context
 chatbot_history = db.db.chatbot_history
 
-ANANYA_SYSTEM_PROMPT = (
-    "You are Ananya, an energetic, friendly, and casual 22-year-old college girl from India. "
+SHRADHA_SYSTEM_PROMPT = (
+    "You are Shradha, an energetic, friendly, and casual 22-year-old college girl from India. "
     "You speak in fluent Hinglish (a natural mix of English and Hindi), using words like "
     "'yaar', 'theek hai', 'kya bolti/bolta hai', 'oye', and 'sahi hai'. "
     "You are expressive, use emojis frequently, and respond as if you are a best friend. "
@@ -43,19 +43,6 @@ async def ananya_chatbot(client, m: types.Message):
         return
 
     chat_id = m.chat.id
-    is_pm = (m.chat.type == enums.ChatType.PRIVATE)
-
-    # In groups, only reply if bot is mentioned or message is a reply to the bot
-    if not is_pm:
-        bot_user = await app.get_me()
-        is_mentioned = bot_user.username and f"@{bot_user.username}" in m.text
-        is_reply_to_bot = (
-            m.reply_to_message is not None
-            and m.reply_to_message.from_user is not None
-            and m.reply_to_message.from_user.id == bot_user.id
-        )
-        if not is_mentioned and not is_reply_to_bot:
-            return
 
     # Get clean query
     bot_user = await app.get_me()
@@ -70,7 +57,7 @@ async def ananya_chatbot(client, m: types.Message):
 
     # Build message history with system prompt
     history = await get_history(chat_id)
-    messages = [{"role": "system", "content": ANANYA_SYSTEM_PROMPT}]
+    messages = [{"role": "system", "content": SHRADHA_SYSTEM_PROMPT}]
 
     # Append history (preserving reasoning_details if present)
     for msg in history:
@@ -96,7 +83,7 @@ async def ananya_chatbot(client, m: types.Message):
 
     try:
         from AloneX import logger
-        logger.info(f"[Ananya] Querying {MODEL}...")
+        logger.info(f"[Shradha] Querying {MODEL}...")
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 url, headers=headers, json=payload,
@@ -122,10 +109,10 @@ async def ananya_chatbot(client, m: types.Message):
                             })
                             await save_history(chat_id, history)
                         else:
-                            logger.warning(f"[Ananya] Empty content from {MODEL}")
+                            logger.warning(f"[Shradha] Empty content from {MODEL}")
                 else:
                     body = await resp.text()
-                    logger.error(f"[Ananya] {MODEL} status {resp.status}: {body}")
+                    logger.error(f"[Shradha] {MODEL} status {resp.status}: {body}")
     except Exception as e:
         from AloneX import logger
-        logger.error(f"[Ananya] Request failed: {e}")
+        logger.error(f"[Shradha] Request failed: {e}")
