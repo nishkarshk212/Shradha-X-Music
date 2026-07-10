@@ -118,8 +118,8 @@ async def chatbot_reply_handler(client, m: types.Message):
         "Content-Type": "application/json",
     }
     
-    # We will try the user's preferred model (qwen/qwen3.7-plus) first, then fallback to qwen3-coder:free or llama-3.2-3b-instruct:free if needed.
-    for model_name in ["qwen/qwen3.7-plus", "qwen/qwen3-coder:free", "meta-llama/llama-3.2-3b-instruct:free"]:
+    # We will try the user's preferred model (deepseek/deepseek-r1-0528) first, then fallback to qwen/qwen3-coder:free or meta-llama/llama-3.2-3b-instruct:free if needed.
+    for model_name in ["deepseek/deepseek-r1-0528", "qwen/qwen3-coder:free", "meta-llama/llama-3.2-3b-instruct:free"]:
         payload = {
             "model": model_name,
             "messages": messages,
