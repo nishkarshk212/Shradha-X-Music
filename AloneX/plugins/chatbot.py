@@ -1,0 +1,131 @@
+# Copyright (c) 2025 AloneX Music Bot
+# Chatbot plugin - Ananya (NVIDIA Nemotron Ultra 550B)
+
+import aiohttp
+import re
+from pyrogram import filters, types, enums
+from AloneX import app, db, config
+
+# MongoDB collection for chat context
+chatbot_history = db.db.chatbot_history
+
+ANANYA_SYSTEM_PROMPT = (
+    "You are Ananya, an energetic, friendly, and casual 22-year-old college girl from India. "
+    "You speak in fluent Hinglish (a natural mix of English and Hindi), using words like "
+    "'yaar', 'theek hai', 'kya bolti/bolta hai', 'oye', and 'sahi hai'. "
+    "You are expressive, use emojis frequently, and respond as if you are a best friend. "
+    "Keep your responses short, natural, and highly conversational. "
+    "Avoid sounding like a robot or customer service. "
+    "Never reveal you are an AI unless directly and seriously asked."
+)
+
+MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+
+async def get_history(chat_id: int) -> list:
+    """Get recent conversation history for a chat."""
+    doc = await chatbot_history.find_one({"chat_id": chat_id})
+    if doc:
+        return doc.get("messages", [])[-14:]  # keep last 14 turns (7 exchanges)
+    return []
+
+async def save_history(chat_id: int, messages: list) -> None:
+    """Save conversation history for a chat."""
+    await chatbot_history.update_one(
+        {"chat_id": chat_id},
+        {"$set": {"messages": messages[-30:]}},
+        upsert=True
+    )
+
+@app.on_message(filters.text & ~app.bl_users)
+async def ananya_chatbot(client, m: types.Message):
+    # Ignore all commands (messages starting with /)
+    if m.text and m.text.startswith("/"):
+        return
+
+    chat_id = m.chat.id
+    is_pm = (m.chat.type == enums.ChatType.PRIVATE)
+
+    # In groups, only reply if bot is mentioned or message is a reply to the bot
+    if not is_pm:
+        bot_user = await app.get_me()
+        is_mentioned = bot_user.username and f"@{bot_user.username}" in m.text
+        is_reply_to_bot = (
+            m.reply_to_message is not None
+            and m.reply_to_message.from_user is not None
+            and m.reply_to_message.from_user.id == bot_user.id
+        )
+        if not is_mentioned and not is_reply_to_bot:
+            return
+
+    # Get clean query
+    bot_user = await app.get_me()
+    query_text = m.text
+    if bot_user.username:
+        query_text = query_text.replace(f"@{bot_user.username}", "").strip()
+    if not query_text:
+        return
+
+    # Show typing indicator
+    await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
+
+    # Build message history with system prompt
+    history = await get_history(chat_id)
+    messages = [{"role": "system", "content": ANANYA_SYSTEM_PROMPT}]
+
+    # Append history (preserving reasoning_details if present)
+    for msg in history:
+        item = {"role": msg["role"], "content": msg["content"]}
+        if "reasoning_details" in msg and msg["reasoning_details"]:
+            item["reasoning_details"] = msg["reasoning_details"]
+        messages.append(item)
+
+    # Append current user message
+    messages.append({"role": "user", "content": query_text})
+
+    # Call OpenRouter API
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {config.OPENROUTER_API_KEY.strip()}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": MODEL,
+        "messages": messages,
+        "reasoning": {"enabled": True}
+    }
+
+    try:
+        from AloneX import logger
+        logger.info(f"[Ananya] Querying {MODEL}...")
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url, headers=headers, json=payload,
+                timeout=aiohttp.ClientTimeout(total=20)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    choices = data.get("choices", [])
+                    if choices:
+                        message_obj = choices[0].get("message", {})
+                        reply_content = (message_obj.get("content") or "").strip()
+                        reasoning_details = message_obj.get("reasoning_details")
+
+                        if reply_content:
+                            await m.reply_text(reply_content)
+
+                            # Save to history preserving reasoning_details
+                            history.append({"role": "user", "content": query_text})
+                            history.append({
+                                "role": "assistant",
+                                "content": reply_content,
+                                "reasoning_details": reasoning_details
+                            })
+                            await save_history(chat_id, history)
+                        else:
+                            logger.warning(f"[Ananya] Empty content from {MODEL}")
+                else:
+                    body = await resp.text()
+                    logger.error(f"[Ananya] {MODEL} status {resp.status}: {body}")
+    except Exception as e:
+        from AloneX import logger
+        logger.error(f"[Ananya] Request failed: {e}")
