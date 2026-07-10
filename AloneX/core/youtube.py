@@ -366,3 +366,103 @@ class YouTube:
             return await download_video(video_id)
         else:
             return await download_song(video_id)
+
+    async def get_stream_url(self, video_id: str, video: bool = False) -> str | None:
+        """Quickly resolve a direct stream URL without downloading the file.
+        Used for instant playback — pytgcalls/ffmpeg can stream directly from URLs.
+
+        Priority:
+        1. yt-dlp with cookies (extract_info, no download)
+        2. Railway API /stream endpoint
+        3. yt-dlp without cookies (extract_info, no download)
+        """
+        if not video_id or len(video_id) < 3:
+            return None
+
+        url = f"https://www.youtube.com/watch?v={video_id}"
+
+        # Step 1: yt-dlp with cookies — just extract URL, no download
+        cookie_file = self.get_cookies()
+        if cookie_file:
+            try:
+                logger.info(f"[Stream Step 1] Resolving stream URL with cookies: {video_id}")
+                stream_url = await self._extract_stream_url(url, video, cookie_file)
+                if stream_url:
+                    logger.info(f"[Stream] Got stream URL via cookies for {video_id}")
+                    return stream_url
+            except Exception as e:
+                logger.error(f"[Stream Step 1] Cookie extract failed: {e}")
+
+        # Step 2: Railway API /stream endpoint
+        if API_KEY:
+            try:
+                logger.info(f"[Stream Step 2] Trying Railway API /stream: {video_id}")
+                headers = {"X-API-Key": API_KEY}
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        f"{API_URL}/stream",
+                        params={"id": video_id},
+                        headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=15),
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            if data.get("success"):
+                                stream_info = data.get("stream", {})
+                                stream_url = stream_info.get("url") or stream_info.get("audio_url")
+                                if stream_url:
+                                    logger.info(f"[Stream] Got stream URL via Railway API for {video_id}")
+                                    return stream_url
+            except Exception as e:
+                logger.error(f"[Stream Step 2] Railway API failed: {e}")
+
+        # Step 3: yt-dlp without cookies — just extract URL
+        try:
+            logger.info(f"[Stream Step 3] Resolving stream URL without cookies: {video_id}")
+            stream_url = await self._extract_stream_url(url, video, None)
+            if stream_url:
+                logger.info(f"[Stream] Got stream URL without cookies for {video_id}")
+                return stream_url
+        except Exception as e:
+            logger.error(f"[Stream Step 3] No-cookie extract failed: {e}")
+
+        logger.error(f"[Stream] All stream URL methods failed for {video_id}")
+        return None
+
+    async def _extract_stream_url(self, url: str, video: bool, cookie_file: str | None) -> str | None:
+        """Use yt-dlp extract_info (no download) to get the direct media URL."""
+        ydl_opts = {
+            "format": "bestvideo+bestaudio/best" if video else "bestaudio/best",
+            "quiet": True,
+            "no_warnings": True,
+            "nocheckcertificate": True,
+            "skip_download": True,
+        }
+        if cookie_file:
+            ydl_opts["cookiefile"] = cookie_file
+
+        loop = asyncio.get_event_loop()
+
+        def _extract():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                if not info:
+                    return None
+                # For format with separate audio/video, get the audio URL
+                if not video and info.get("url"):
+                    return info["url"]
+                # Try requested_formats (when bestvideo+bestaudio merges)
+                formats = info.get("requested_formats", [])
+                if formats:
+                    # For audio, pick the audio stream; for video pick the first (video)
+                    if not video:
+                        for fmt in formats:
+                            if fmt.get("acodec") != "none" and fmt.get("vcodec") == "none":
+                                return fmt.get("url")
+                        return formats[-1].get("url")
+                    else:
+                        return formats[0].get("url")
+                return info.get("url")
+
+        return await loop.run_in_executor(None, _extract)
+

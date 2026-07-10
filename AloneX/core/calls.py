@@ -3,6 +3,7 @@
 # This file is part of AloneXMusic
 # ALONE-CODER
 
+import os
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
                       RTMPStreamingUnsupported)
 from pyrogram.errors import MessageIdInvalid
@@ -12,6 +13,14 @@ from pytgcalls.pytgcalls_session import PyTgCallsSession
 
 from AloneX import app, config, db, lang, logger, queue, userbot, yt
 from AloneX.helpers import Media, Track, buttons, thumb
+
+
+def delete_file(file_path: str):
+    if file_path and os.path.exists(file_path) and "downloads" in file_path:
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
 
 
 class TgCall(PyTgCalls):
@@ -31,6 +40,8 @@ class TgCall(PyTgCalls):
     async def stop(self, chat_id: int) -> None:
         client = await db.get_assistant(chat_id)
         try:
+            for item in queue.get_queue(chat_id):
+                delete_file(item.file_path)
             queue.clear(chat_id)
             await db.remove_call(chat_id)
         except:
@@ -134,9 +145,14 @@ class TgCall(PyTgCalls):
 
 
     async def play_next(self, chat_id: int) -> None:
+        # Delete previous song file immediately after it ends
+        current_media = queue.get_current(chat_id)
+        if current_media and current_media.file_path:
+            delete_file(current_media.file_path)
+
         media = queue.get_next(chat_id)
         try:
-            if media.message_id:
+            if media and media.message_id:
                 await app.delete_messages(
                     chat_id=chat_id,
                     message_ids=media.message_id,

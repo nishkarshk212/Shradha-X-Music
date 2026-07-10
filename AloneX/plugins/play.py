@@ -1,8 +1,4 @@
-# Copyright (c) 2025 TheHamkerAlone
-# Licensed under the MIT License.
-# This file is part of AloneXMusic
-#ALONE-CODER
-
+import asyncio
 from pathlib import Path
 
 from pyrogram import filters, types
@@ -12,11 +8,22 @@ from AloneX.helpers import buttons, utils
 from AloneX.helpers._play import checkUB
 
 
+async def bg_download_task(track):
+    if not track.file_path:
+        try:
+            path = await yt.download(track.id, video=track.video)
+            if path:
+                track.file_path = path
+        except Exception:
+            pass
+
+
 def playlist_to_queue(chat_id: int, tracks: list) -> str:
     text = "<blockquote expandable>"
     for track in tracks:
         pos = queue.add(chat_id, track)
         text += f"<b>{pos}.</b> {track.title}\n"
+        asyncio.create_task(bg_download_task(track))
     text = text[:1948] + "</blockquote>"
     return text
 
@@ -92,6 +99,7 @@ async def play_hndlr(
         position = queue.add(m.chat.id, file)
 
         if position != 0 or await db.get_call(m.chat.id):
+            asyncio.create_task(bg_download_task(file))
             await sent.edit_text(
                 m.lang["play_queued"].format(
                     position,
@@ -117,8 +125,14 @@ async def play_hndlr(
         if Path(fname).exists():
             file.file_path = fname
         else:
+            # Try stream URL first for instant playback (no download wait)
             await sent.edit_text(m.lang["play_downloading"])
-            file.file_path = await yt.download(file.id, video=video)
+            stream_url = await yt.get_stream_url(file.id, video=video)
+            if stream_url:
+                file.file_path = stream_url
+            else:
+                # Fall back to full download
+                file.file_path = await yt.download(file.id, video=video)
 
     await anon.play_media(chat_id=m.chat.id, message=sent, media=file)
     if not tracks:
