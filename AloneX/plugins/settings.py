@@ -45,13 +45,13 @@ def build_settings_keyboard(chat_id: int, settings: dict) -> types.InlineKeyboar
     )
     
     btn_lyrics = buttons.ikb(
-        text=f"🎙️ Live Lyrics: {'ON' if settings['lyrics'] else 'OFF'}",
+        text=f"🎙️ Lyrics: {'ON' if settings['lyrics'] else 'OFF'}",
         callback_data=f"set_toggle {chat_id} lyrics",
         style=ButtonStyle.SUCCESS if settings["lyrics"] else ButtonStyle.DANGER
     )
     
     btn_cleanup = buttons.ikb(
-        text=f"🗑️ Auto Cleanup: {'ON' if settings['cleanup'] else 'OFF'}",
+        text=f"🗑️ Cleanup: {'ON' if settings['cleanup'] else 'OFF'}",
         callback_data=f"set_toggle {chat_id} cleanup",
         style=ButtonStyle.SUCCESS if settings["cleanup"] else ButtonStyle.DANGER
     )
@@ -69,10 +69,8 @@ def build_settings_keyboard(chat_id: int, settings: dict) -> types.InlineKeyboar
     )
     
     keyboard = [
-        [btn_chatbot],
-        [btn_lyrics],
-        [btn_cleanup],
-        [btn_quickplay],
+        [btn_chatbot, btn_lyrics],
+        [btn_quickplay, btn_cleanup],
         [btn_close]
     ]
     return buttons.ikm(keyboard)
@@ -86,7 +84,13 @@ async def settings_menu(_, m: types.Message):
     keyboard = build_settings_keyboard(chat_id, settings)
     
     await m.reply_text(
-        f"**AloneX Group Settings for {m.chat.title}**",
+        f"**AloneX Group Settings for {m.chat.title}**\n\n"
+        "🤖 **AI Settings:**\n"
+        "• Chatbot: Automatic group conversational replies\n"
+        "• Live Lyrics: Auto-post synced lyrics on play\n\n"
+        "⚙️ **Main Settings:**\n"
+        "• Quick Play: Instant URL stream without downloading\n"
+        "• Auto Cleanup: Auto-delete downloads after playing",
         reply_markup=keyboard
     )
 

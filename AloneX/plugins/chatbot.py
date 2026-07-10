@@ -105,55 +105,63 @@ async def chatbot_reply_handler(client, m: types.Message):
         messages.append(msg)
     messages.append({"role": "user", "content": query_text})
 
-    # Call OpenRouter API
+    # Call OpenRouter API with a model fallback list
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {config.OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
     }
-    payload = {
-        "model": "meta-llama/llama-3.1-8b-instruct",
-        "messages": messages,
-        "max_tokens": 150
-    }
+    
+    for model_name in ["meta-llama/llama-3.1-8b-instruct", "google/gemini-2.5-flash:free", "openrouter/free"]:
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "max_tokens": 150
+        }
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    choices = data.get("choices", [])
-                    if choices:
-                        reply_content = choices[0].get("message", {}).get("content", "").strip()
-                        if reply_content:
-                            # Check for control directives
-                            control_match = re.match(r"^\[CONTROL:\s*(\w+)\]\s*(.*)$", reply_content, re.IGNORECASE)
-                            if control_match:
-                                action = control_match.group(1).lower()
-                                friendly_reply = control_match.group(2).strip()
-                                
-                                # Execute corresponding control function
-                                if action == "pause":
-                                    if await db.playing(chat_id):
-                                        await anon.pause(chat_id)
-                                elif action == "resume":
-                                    if not await db.playing(chat_id):
-                                        await anon.resume(chat_id)
-                                elif action == "skip":
-                                    await anon.play_next(chat_id)
-                                elif action == "stop":
-                                    await anon.stop(chat_id)
+        try:
+            from AloneX import logger
+            logger.info(f"[Chatbot] Trying model {model_name}...")
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        choices = data.get("choices", [])
+                        if choices:
+                            reply_content = choices[0].get("message", {}).get("content", "").strip()
+                            if reply_content:
+                                # Check for control directives
+                                control_match = re.match(r"^\[CONTROL:\s*(\w+)\]\s*(.*)$", reply_content, re.IGNORECASE)
+                                if control_match:
+                                    action = control_match.group(1).lower()
+                                    friendly_reply = control_match.group(2).strip()
                                     
-                                await m.reply_text(friendly_reply)
-                                return
+                                    # Execute corresponding control function
+                                    if action == "pause":
+                                        if await db.playing(chat_id):
+                                            await anon.pause(chat_id)
+                                    elif action == "resume":
+                                        if not await db.playing(chat_id):
+                                            await anon.resume(chat_id)
+                                    elif action == "skip":
+                                        await anon.play_next(chat_id)
+                                    elif action == "stop":
+                                        await anon.stop(chat_id)
+                                        
+                                    await m.reply_text(friendly_reply)
+                                    return
 
-                            # Reply to user normally
-                            await m.reply_text(reply_content)
-                            
-                            # Append to history
-                            history.append({"role": "user", "content": query_text})
-                            history.append({"role": "assistant", "content": reply_content})
-                            await save_history(chat_id, history)
-                            return
-    except Exception as e:
-        pass
+                                # Reply to user normally
+                                await m.reply_text(reply_content)
+                                
+                                # Append to history
+                                history.append({"role": "user", "content": query_text})
+                                history.append({"role": "assistant", "content": reply_content})
+                                await save_history(chat_id, history)
+                                return
+                    else:
+                        logger.error(f"[Chatbot] Model {model_name} returned status {resp.status}: {await resp.text()}")
+        except Exception as e:
+            from AloneX import logger
+            logger.error(f"[Chatbot] Model {model_name} error: {e}")
+            continue
