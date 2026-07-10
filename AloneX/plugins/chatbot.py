@@ -130,12 +130,14 @@ async def chatbot_reply_handler(client, m: types.Message):
         payload = {
             "model": model_name,
             "messages": messages,
-            "reasoning": {"enabled": True}
         }
+        # Only enable reasoning parameter for models supporting reasoning details
+        if any(term in model_name for term in ["r1", "reasoning", "qwen3.7"]):
+            payload["reasoning"] = {"enabled": True}
 
         try:
             from AloneX import logger
-            logger.info(f"[Chatbot] Querying model {model_name} with reasoning...")
+            logger.info(f"[Chatbot] Querying model {model_name}...")
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                     if resp.status == 200:
