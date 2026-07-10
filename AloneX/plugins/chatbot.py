@@ -54,6 +54,9 @@ async def toggle_chatbot(_, m: types.Message):
     & ~app.bl_users
 )
 async def chatbot_reply_handler(client, m: types.Message):
+    if m.text and m.text.startswith("/"):
+        return
+        
     chat_id = m.chat.id
     is_pm = (m.chat.type == enums.ChatType.PRIVATE)
     
