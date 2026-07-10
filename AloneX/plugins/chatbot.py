@@ -79,16 +79,9 @@ async def chatbot_reply_handler(client, m: types.Message):
     if is_pm:
         should_reply = True
     else:
-        # Check if chatbot is enabled for this group
+        # Check if chatbot is enabled for this group - reply to all messages if enabled
         if await is_chatbot_enabled(chat_id):
-            if m.reply_to_message and m.reply_to_message.from_user and m.reply_to_message.from_user.id == bot_user.id:
-                should_reply = True
-            elif bot_user.username and f"@{bot_user.username}" in m.text:
-                should_reply = True
-            elif bot_user.mention and bot_user.mention in m.text:
-                should_reply = True
-            elif bot_user.first_name and bot_user.first_name.lower() in m.text.lower():
-                should_reply = True
+            should_reply = True
 
     if not should_reply:
         return
