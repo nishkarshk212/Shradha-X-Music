@@ -124,13 +124,6 @@ class TgCall(PyTgCalls):
                         caption=text,
                         reply_markup=keyboard,
                     )).id
-
-            try:
-                from AloneX.plugins.lyrics import trigger_auto_lyrics
-                import asyncio
-                asyncio.create_task(trigger_auto_lyrics(chat_id, media))
-            except Exception:
-                pass
         except FileNotFoundError:
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             await self.play_next(chat_id)

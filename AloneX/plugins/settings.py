@@ -11,14 +11,10 @@ async def get_chat_settings(chat_id: int) -> dict:
     doc = await settings_db.find_one({"chat_id": chat_id})
     if not doc:
         return {
-            "chatbot": True,
-            "lyrics": True,
             "cleanup": True,
             "quickplay": True
         }
     return {
-        "chatbot": doc.get("chatbot", True),
-        "lyrics": doc.get("lyrics", True),
         "cleanup": doc.get("cleanup", True),
         "quickplay": doc.get("quickplay", True)
     }
@@ -38,18 +34,6 @@ async def toggle_chat_setting(chat_id: int, feature: str) -> dict:
 
 def build_settings_keyboard(chat_id: int, settings: dict) -> types.InlineKeyboardMarkup:
     """Build the settings dashboard with Green/Red colored buttons using helper.buttons."""
-    btn_chatbot = buttons.ikb(
-        text=f"🤖 Chatbot: {'ON' if settings['chatbot'] else 'OFF'}",
-        callback_data=f"set_toggle {chat_id} chatbot",
-        style=ButtonStyle.SUCCESS if settings["chatbot"] else ButtonStyle.DANGER
-    )
-    
-    btn_lyrics = buttons.ikb(
-        text=f"🎙️ Lyrics: {'ON' if settings['lyrics'] else 'OFF'}",
-        callback_data=f"set_toggle {chat_id} lyrics",
-        style=ButtonStyle.SUCCESS if settings["lyrics"] else ButtonStyle.DANGER
-    )
-    
     btn_cleanup = buttons.ikb(
         text=f"🗑️ Cleanup: {'ON' if settings['cleanup'] else 'OFF'}",
         callback_data=f"set_toggle {chat_id} cleanup",
@@ -69,7 +53,6 @@ def build_settings_keyboard(chat_id: int, settings: dict) -> types.InlineKeyboar
     )
     
     keyboard = [
-        [btn_chatbot, btn_lyrics],
         [btn_quickplay, btn_cleanup],
         [btn_close]
     ]
@@ -85,9 +68,6 @@ async def settings_menu(_, m: types.Message):
     
     await m.reply_text(
         f"**AloneX Group Settings for {m.chat.title}**\n\n"
-        "🤖 **AI Settings:**\n"
-        "• Chatbot: Automatic group conversational replies\n"
-        "• Live Lyrics: Auto-post synced lyrics on play\n\n"
         "⚙️ **Main Settings:**\n"
         "• Quick Play: Instant URL stream without downloading\n"
         "• Auto Cleanup: Auto-delete downloads after playing",
