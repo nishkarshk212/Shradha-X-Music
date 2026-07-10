@@ -86,8 +86,7 @@ async def settings_menu(_, m: types.Message):
     keyboard = build_settings_keyboard(chat_id, settings)
     
     await m.reply_text(
-        f"⚙️ **AloneX Group Settings for {m.chat.title}**\n\n"
-        "Configure features directly from here. Active features are marked green, disabled features are marked red.",
+        f"**AloneX Group Settings for {m.chat.title}**",
         reply_markup=keyboard
     )
 
