@@ -17,7 +17,7 @@ async def is_chatbot_enabled(chat_id: int) -> bool:
     if chat_id > 0:
         return True
     doc = await chatbot_db.find_one({"chat_id": chat_id})
-    return doc.get("enabled", False) if doc else False
+    return doc.get("enabled", True) if doc else True
 
 async def set_chatbot(chat_id: int, enabled: bool) -> None:
     """Enable or disable chatbot for a specific group."""
