@@ -120,6 +120,8 @@ async def chatbot_reply_handler(client, m: types.Message):
     
     # Try active free models on OpenRouter (never consumes paid credits)
     for model_name in [
+        "tencent/hy3:free",
+        "liquid/lfm-2.5-1.2b-instruct:free",
         "qwen/qwen3-next-80b-a3b-instruct:free", 
         "google/gemma-4-31b-it:free", 
         "qwen/qwen3-coder:free", 
