@@ -159,3 +159,30 @@ async def show_live_lyrics(_, m: types.Message):
         lyrics_live_tracker(chat_id, sent, parsed_lyrics, media.duration_sec, media.title)
     )
     lyrics_tasks[chat_id] = task
+
+
+async def trigger_auto_lyrics(chat_id: int, media) -> None:
+    """Automatically fetch and track lyrics for a new song if enabled."""
+    from AloneX.plugins.settings import get_chat_settings
+    settings = await get_chat_settings(chat_id)
+    if not settings.get("lyrics", True):
+        return
+        
+    # Cancel previous lyrics task for this chat if exists
+    if chat_id in lyrics_tasks:
+        try:
+            lyrics_tasks[chat_id].cancel()
+        except Exception:
+            pass
+        
+    try:
+        sent = await app.send_message(chat_id, "🔍 Fetching auto lyrics...")
+        parsed_lyrics = await fetch_lyrics_ai(media.title, media.channel_name or "", media.duration_sec)
+        
+        task = asyncio.create_task(
+            lyrics_live_tracker(chat_id, sent, parsed_lyrics, media.duration_sec, media.title)
+        )
+        lyrics_tasks[chat_id] = task
+    except Exception:
+        pass
+
