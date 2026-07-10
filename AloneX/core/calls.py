@@ -15,7 +15,14 @@ from AloneX import app, config, db, lang, logger, queue, userbot, yt
 from AloneX.helpers import Media, Track, buttons, thumb
 
 
-def delete_file(file_path: str):
+async def delete_file(file_path: str, chat_id: int):
+    try:
+        from AloneX.plugins.settings import get_chat_settings
+        settings = await get_chat_settings(chat_id)
+        if not settings.get("cleanup", True):
+            return
+    except Exception:
+        pass
     if file_path and os.path.exists(file_path) and "downloads" in file_path:
         try:
             os.remove(file_path)
@@ -41,7 +48,7 @@ class TgCall(PyTgCalls):
         client = await db.get_assistant(chat_id)
         try:
             for item in queue.get_queue(chat_id):
-                delete_file(item.file_path)
+                await delete_file(item.file_path, chat_id)
             queue.clear(chat_id)
             await db.remove_call(chat_id)
         except:
@@ -148,7 +155,7 @@ class TgCall(PyTgCalls):
         # Delete previous song file immediately after it ends
         current_media = queue.get_current(chat_id)
         if current_media and current_media.file_path:
-            delete_file(current_media.file_path)
+            await delete_file(current_media.file_path, chat_id)
 
         media = queue.get_next(chat_id)
         try:

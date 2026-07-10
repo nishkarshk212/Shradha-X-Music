@@ -125,9 +125,15 @@ async def play_hndlr(
         if Path(fname).exists():
             file.file_path = fname
         else:
-            # Try stream URL first for instant playback (no download wait)
+            # Check settings if Quick Play (stream-first) is enabled
+            from AloneX.plugins.settings import get_chat_settings
+            settings = await get_chat_settings(m.chat.id)
+            
             await sent.edit_text(m.lang["play_downloading"])
-            stream_url = await yt.get_stream_url(file.id, video=video)
+            stream_url = None
+            if settings.get("quickplay", True):
+                stream_url = await yt.get_stream_url(file.id, video=video)
+                
             if stream_url:
                 file.file_path = stream_url
             else:

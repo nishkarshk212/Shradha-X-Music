@@ -14,17 +14,17 @@ chatbot_history = db.db.chatbot_history
 
 async def is_chatbot_enabled(chat_id: int) -> bool:
     """Check if chatbot is enabled for a specific group."""
-    # Private chats (PM) always have chatbot enabled
     if chat_id > 0:
         return True
-    doc = await chatbot_db.find_one({"chat_id": chat_id})
-    return doc.get("enabled", True) if doc else True
+    from AloneX.plugins.settings import get_chat_settings
+    settings = await get_chat_settings(chat_id)
+    return settings.get("chatbot", True)
 
 async def set_chatbot(chat_id: int, enabled: bool) -> None:
     """Enable or disable chatbot for a specific group."""
-    await chatbot_db.update_one(
+    await db.db.settings.update_one(
         {"chat_id": chat_id},
-        {"$set": {"enabled": enabled}},
+        {"$set": {"chatbot": enabled}},
         upsert=True
     )
 
@@ -47,20 +47,7 @@ async def save_history(chat_id: int, messages: list) -> None:
 @lang.language()
 @admin_check
 async def toggle_chatbot(_, m: types.Message):
-    if len(m.command) < 2:
-        enabled = await is_chatbot_enabled(m.chat.id)
-        status_str = "Enabled" if enabled else "Disabled"
-        return await m.reply_text(f"🤖 Chatbot is currently **{status_str}** in this chat.\nUse `/chatbot on` or `/chatbot off` to toggle.")
-
-    action = m.command[1].strip().lower()
-    if action == "on":
-        await set_chatbot(m.chat.id, True)
-        return await m.reply_text("🤖 Chatbot has been **Enabled** for this group!")
-    elif action == "off":
-        await set_chatbot(m.chat.id, False)
-        return await m.reply_text("🤖 Chatbot has been **Disabled** for this group.")
-    else:
-        return await m.reply_text("Invalid argument. Use `/chatbot on` or `/chatbot off`.")
+    await m.reply_text("🤖 Please configure chatbot settings directly using `/settings`!")
 
 @app.on_message(
     (filters.text & ~filters.command(["chatbot", "play", "vplay", "skip", "stop", "pause", "resume", "queue"]))

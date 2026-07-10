@@ -135,6 +135,11 @@ async def lyrics_live_tracker(chat_id: int, message: types.Message, parsed_lyric
 @lang.language()
 async def show_live_lyrics(_, m: types.Message):
     chat_id = m.chat.id
+    from AloneX.plugins.settings import get_chat_settings
+    settings = await get_chat_settings(chat_id)
+    if not settings.get("lyrics", True):
+        return await m.reply_text("❌ Lyrics feature is disabled in settings. Enable it using `/settings` first!")
+
     if not await db.get_call(chat_id):
         return await m.reply_text("❌ No music is playing right now.")
         
