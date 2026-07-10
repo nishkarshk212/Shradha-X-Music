@@ -3,7 +3,7 @@
 # This file is part of AloneXMusic
 
 import aiohttp
-from pyrogram import filters, types
+from pyrogram import filters, types, enums
 from AloneX import app, db, lang, config
 from AloneX.helpers import admin_check, can_manage_vc
 
@@ -67,7 +67,7 @@ async def toggle_chatbot(_, m: types.Message):
 )
 async def chatbot_reply_handler(client, m: types.Message):
     chat_id = m.chat.id
-    is_pm = (m.chat.type == types.enums.ChatType.PRIVATE)
+    is_pm = (m.chat.type == enums.ChatType.PRIVATE)
     
     # In groups, only reply if chatbot is enabled AND:
     # 1. User replied to a message sent by the bot
@@ -94,7 +94,7 @@ async def chatbot_reply_handler(client, m: types.Message):
         return
 
     # Indicate typing while fetching response
-    await client.send_chat_action(chat_id, types.enums.ChatAction.TYPING)
+    await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
 
     # Clean query text (remove bot mention if any)
     query_text = m.text
