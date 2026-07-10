@@ -16,7 +16,7 @@ async def fetch_lyrics_ai(song_title: str, artist: str, duration_sec: int) -> li
     """Fetch structured lyrics with estimated timestamps via OpenRouter AI."""
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {config.OPENROUTER_API_KEY}",
+        "Authorization": f"Bearer {config.OPENROUTER_API_KEY.strip()}",
         "Content-Type": "application/json",
     }
     

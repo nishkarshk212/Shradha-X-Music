@@ -108,7 +108,7 @@ async def chatbot_reply_handler(client, m: types.Message):
     # Call OpenRouter API with a model fallback list
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {config.OPENROUTER_API_KEY}",
+        "Authorization": f"Bearer {config.OPENROUTER_API_KEY.strip()}",
         "Content-Type": "application/json",
     }
     

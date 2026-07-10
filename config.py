@@ -43,7 +43,7 @@ class Config:
         self.RAILWAY_YT_API_URL = getenv("RAILWAY_YT_API_URL", "https://youtube-api-music-production-77fb.up.railway.app")
 
         # OpenRouter API Key for Chatbot
-        self.OPENROUTER_API_KEY = getenv("OPENROUTER_API_KEY", "")
+        self.OPENROUTER_API_KEY = getenv("OPENROUTER_API_KEY", "").strip()
 
     def check(self):
         missing = [
