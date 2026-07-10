@@ -118,8 +118,14 @@ async def chatbot_reply_handler(client, m: types.Message):
         "Content-Type": "application/json",
     }
     
-    # We will try the user's preferred model (deepseek/deepseek-r1-0528) first, then fallback to qwen/qwen3-coder:free or meta-llama/llama-3.2-3b-instruct:free if needed.
-    for model_name in ["deepseek/deepseek-r1-0528", "qwen/qwen3-coder:free", "meta-llama/llama-3.2-3b-instruct:free"]:
+    # We will try the user's preferred model (deepseek/deepseek-r1-0528) first, then fallback to other active free models to bypass Venice rate limits.
+    for model_name in [
+        "deepseek/deepseek-r1-0528", 
+        "qwen/qwen3-next-80b-a3b-instruct:free", 
+        "google/gemma-4-31b-it:free", 
+        "qwen/qwen3-coder:free", 
+        "meta-llama/llama-3.2-3b-instruct:free"
+    ]:
         payload = {
             "model": model_name,
             "messages": messages,
