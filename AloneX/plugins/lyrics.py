@@ -30,7 +30,7 @@ async def fetch_lyrics_ai(song_title: str, artist: str, duration_sec: int) -> li
     )
     
     payload = {
-        "model": "meta-llama/llama-3.1-8b-instruct",
+        "model": "google/lyria-3-pro-preview",
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 1000
     }
@@ -105,8 +105,15 @@ def build_lyrics_display(parsed_lyrics: list, current_time: int, duration_sec: i
     )
 
 async def lyrics_live_tracker(chat_id: int, message: types.Message, parsed_lyrics: list, duration_sec: int, song_title: str):
-    """Keep updating the lyrics message in sync with live duration."""
+    """Send each lyric line as a new message when it starts playing."""
     try:
+        # Delete the initial loading message to keep group clean
+        try:
+            await message.delete()
+        except Exception:
+            pass
+            
+        last_active_index = -1
         while chat_id in db.active_calls:
             # Check if active song changed
             media = queue.get_current(chat_id)
@@ -117,15 +124,26 @@ async def lyrics_live_tracker(chat_id: int, message: types.Message, parsed_lyric
             if current_time > duration_sec:
                 break
                 
-            text = build_lyrics_display(parsed_lyrics, current_time, duration_sec, song_title)
-            try:
-                await message.edit_text(text)
-            except Exception:
-                pass
-                
-            await asyncio.sleep(4)
+            # Find current active lyric line
+            active_index = -1
+            for idx, (time_sec, text) in enumerate(parsed_lyrics):
+                if current_time >= time_sec:
+                    active_index = idx
+                else:
+                    break
             
-        await message.edit_text(f"🏁 **Lyrics tracking finished for {song_title}.**")
+            # Send new lyric line as a separate message when active line changes
+            if active_index != -1 and active_index != last_active_index:
+                last_active_index = active_index
+                time_sec, lyric_text = parsed_lyrics[active_index]
+                if lyric_text.strip():
+                    try:
+                        await app.send_message(chat_id, f"🎙️ **{lyric_text}**")
+                    except Exception:
+                        pass
+                        
+            await asyncio.sleep(2)
+            
     except asyncio.CancelledError:
         pass
     finally:
