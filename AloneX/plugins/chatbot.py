@@ -113,7 +113,7 @@ async def chatbot_reply_handler(client, m: types.Message):
     }
     
     # Try active free models on OpenRouter
-    for model_name in ["meta-llama/llama-3-8b-instruct:free", "google/gemma-2-9b-it:free", "meta-llama/llama-3.3-70b-instruct:free"]:
+    for model_name in ["meta-llama/llama-3.2-3b-instruct:free", "qwen/qwen3-coder:free", "google/gemma-4-31b-it:free"]:
         payload = {
             "model": model_name,
             "messages": messages,

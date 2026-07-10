@@ -30,7 +30,7 @@ async def fetch_lyrics_ai(song_title: str, artist: str, duration_sec: int) -> li
     )
     
     # Step 1: Try preferred google/lyria-3-pro-preview model with a short timeout
-    for model_name in ["google/lyria-3-pro-preview", "openrouter/free"]:
+    for model_name in ["google/lyria-3-pro-preview", "qwen/qwen3-coder:free", "meta-llama/llama-3.2-3b-instruct:free"]:
         payload = {
             "model": model_name,
             "messages": [{"role": "user", "content": prompt}],
