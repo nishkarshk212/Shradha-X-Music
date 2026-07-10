@@ -29,37 +29,43 @@ async def fetch_lyrics_ai(song_title: str, artist: str, duration_sec: int) -> li
         "Do not write any introductory or concluding text, only the timestamped lyrics."
     )
     
-    payload = {
-        "model": "google/lyria-3-pro-preview",
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 1000
-    }
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=20)) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    content = data["choices"][0]["message"]["content"]
-                    
-                    # Parse timestamp lines: [MM:SS] Lyric Text
-                    parsed_lyrics = []
-                    for line in content.split("\n"):
-                        match = re.match(r"^\[(\d+):(\d+)\]\s*(.*)$", line.strip())
-                        if match:
-                            m, s = int(match.group(1)), int(match.group(2))
-                            timestamp_sec = m * 60 + s
-                            lyric_text = match.group(3).strip()
-                            parsed_lyrics.append((timestamp_sec, lyric_text))
-                    
-                    if parsed_lyrics:
-                        # Sort by time
-                        parsed_lyrics.sort(key=lambda x: x[0])
-                        return parsed_lyrics
-    except Exception:
-        pass
-    
-    # Fallback/Dummy lyrics distributed evenly if AI call fails
+    # Step 1: Try preferred google/lyria-3-pro-preview model with a short timeout
+    for model_name in ["google/lyria-3-pro-preview", "openrouter/free"]:
+        payload = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 1000
+        }
+        
+        try:
+            logger.info(f"[Lyrics] Querying model {model_name}...")
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        choices = data.get("choices", [])
+                        if choices:
+                            content = choices[0]["message"]["content"]
+                            if content and len(content.strip()) > 30:
+                                # Parse timestamp lines: [MM:SS] Lyric Text
+                                parsed_lyrics = []
+                                for line in content.split("\n"):
+                                    match = re.match(r"^\[(\d+):(\d+)\]\s*(.*)$", line.strip())
+                                    if match:
+                                        m, s = int(match.group(1)), int(match.group(2))
+                                        timestamp_sec = m * 60 + s
+                                        lyric_text = match.group(3).strip()
+                                        parsed_lyrics.append((timestamp_sec, lyric_text))
+                                
+                                if parsed_lyrics:
+                                    # Sort by time
+                                    parsed_lyrics.sort(key=lambda x: x[0])
+                                    logger.info(f"[Lyrics] Successfully fetched using {model_name}")
+                                    return parsed_lyrics
+        except Exception as e:
+            logger.error(f"[Lyrics] Model {model_name} failed: {e}")
+            
+    # Fallback/Dummy lyrics distributed evenly if all AI calls fail
     interval = max(5, duration_sec // 10)
     return [(i * interval, f"🎵 Playing line {i+1}...") for i in range(10)]
 
