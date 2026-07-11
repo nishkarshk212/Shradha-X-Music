@@ -173,24 +173,33 @@ class TgCall(PyTgCalls):
             # Queue empty — try AutoPlay (related tracks) if enabled.
             if await db.get_autoplay(chat_id):
                 played_ids = {t.id for t in queue.get_queue(chat_id)}
+                if current_media and current_media.id:
+                    played_ids.add(current_media.id)
                 last = current_media
                 candidates = []
                 try:
                     if last and last.id:
+                        # Ask for a few candidates so we can skip any that are
+                        # duplicates of what's already played/queued.
                         candidates = await yt.related(
                             last.id,
                             last.title,
                             last.user or (await app.get_me()).mention,
                             last.video,
-                            limit=1,
+                            limit=5,
                             exclude_ids=played_ids,
                         )
                 except Exception as e:
                     logger.error(f"AutoPlay fetch error: {e}")
 
-                if candidates:
+                # Pick the first candidate that isn't already played/queued.
+                chosen = next(
+                    (c for c in candidates if c.id not in played_ids),
+                    None,
+                )
+                if chosen:
                     logger.info(f"AutoPlay: queuing related track in {chat_id}")
-                    queue.add(chat_id, candidates[0])
+                    queue.add(chat_id, chosen)
                     return await self.play_next(chat_id)
 
             return await self.stop(chat_id)

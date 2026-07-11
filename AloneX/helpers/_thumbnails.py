@@ -18,7 +18,7 @@ from PIL import (
     ImageFont,
 )
 
-from AloneX import app, config
+from AloneX import app, config, logger
 from AloneX.helpers import Track
 
 
@@ -55,6 +55,9 @@ class Thumbnail:
         output_path: str,
         url: str,
     ) -> str:
+        if not url or not isinstance(url, str):
+            # No valid thumbnail URL — nothing to download.
+            return None
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 open(output_path, "wb").write(
@@ -100,32 +103,42 @@ class Thumbnail:
             if os.path.exists(output):
                 return output
 
-            await self.save_thumb(
-                temp,
-                song.thumbnail,
-            )
+            # Download the source thumbnail. If it's missing/invalid, we still
+            # render a premium themed card (title/duration/requester) instead of
+            # bailing to DEFAULT_THUMB — so now-playing always shows the info.
+            temp_thumb = await self.save_thumb(temp, song.thumbnail)
+            img = None
 
-            img = (
-                Image.open(temp)
-                .convert("RGBA")
-            )
+            if temp_thumb and os.path.exists(temp_thumb):
+                img = Image.open(temp_thumb).convert("RGBA")
 
-            # Create blurred background from thumbnail
-            bg = img.resize(
-                (
-                    self.width,
-                    self.height,
-                ),
-                Image.Resampling.LANCZOS,
-            )
+                # Create blurred background from thumbnail
+                bg = img.resize(
+                    (
+                        self.width,
+                        self.height,
+                    ),
+                    Image.Resampling.LANCZOS,
+                )
 
-            bg = bg.filter(
-                ImageFilter.GaussianBlur(50)
-            )
+                bg = bg.filter(
+                    ImageFilter.GaussianBlur(50)
+                )
 
-            bg = ImageEnhance.Brightness(
-                bg
-            ).enhance(0.35)
+                bg = ImageEnhance.Brightness(
+                    bg
+                ).enhance(0.35)
+            else:
+                # No thumbnail available — start from a dark base so the text
+                # and theme tint are still drawn.
+                logger.warning(
+                    f"No thumbnail for {song.id}; rendering text card only."
+                )
+                bg = Image.new(
+                    "RGBA",
+                    (self.width, self.height),
+                    (18, 18, 24, 255),
+                )
 
             # Premium dynamic color themes: (R, G, B)
             THEMES = [
@@ -159,89 +172,90 @@ class Thumbnail:
                 - self.album_size
             ) // 2 - 20
 
-            album = img.resize(
-                (
-                    self.album_size,
-                    self.album_size,
-                ),
-                Image.Resampling.LANCZOS,
-            )
+            if img is not None:
+                album = img.resize(
+                    (
+                        self.album_size,
+                        self.album_size,
+                    ),
+                    Image.Resampling.LANCZOS,
+                )
 
-            # Rounded mask for album
-            mask = Image.new(
-                "L",
-                (
-                    self.album_size,
-                    self.album_size,
-                ),
-                0,
-            )
-
-            ImageDraw.Draw(mask).rounded_rectangle(
-                (
+                # Rounded mask for album
+                mask = Image.new(
+                    "L",
+                    (
+                        self.album_size,
+                        self.album_size,
+                    ),
                     0,
-                    0,
-                    self.album_size,
-                    self.album_size,
-                ),
-                radius=self.radius,
-                fill=255,
-            )
+                )
 
-            # Theme glow shadow behind album
-            glow_size = self.album_size + 50
-            glow = Image.new(
-                "RGBA",
-                (glow_size, glow_size),
-                (0, 0, 0, 0),
-            )
+                ImageDraw.Draw(mask).rounded_rectangle(
+                    (
+                        0,
+                        0,
+                        self.album_size,
+                        self.album_size,
+                    ),
+                    radius=self.radius,
+                    fill=255,
+                )
 
-            ImageDraw.Draw(glow).rounded_rectangle(
-                (
-                    15,
-                    15,
-                    glow_size - 15,
-                    glow_size - 15,
-                ),
-                radius=self.radius + 10,
-                fill=(theme_color[0], theme_color[1], theme_color[2], 130),
-            )
+                # Theme glow shadow behind album
+                glow_size = self.album_size + 50
+                glow = Image.new(
+                    "RGBA",
+                    (glow_size, glow_size),
+                    (0, 0, 0, 0),
+                )
 
-            glow = glow.filter(
-                ImageFilter.GaussianBlur(25)
-            )
+                ImageDraw.Draw(glow).rounded_rectangle(
+                    (
+                        15,
+                        15,
+                        glow_size - 15,
+                        glow_size - 15,
+                    ),
+                    radius=self.radius + 10,
+                    fill=(theme_color[0], theme_color[1], theme_color[2], 130),
+                )
 
-            bg.paste(
-                glow,
-                (
-                    frame_x - 25,
-                    frame_y - 25,
-                ),
-                glow,
-            )
+                glow = glow.filter(
+                    ImageFilter.GaussianBlur(25)
+                )
 
-            # Paste album art
-            bg.paste(
-                album,
-                (
-                    frame_x,
-                    frame_y,
-                ),
-                mask,
-            )
+                bg.paste(
+                    glow,
+                    (
+                        frame_x - 25,
+                        frame_y - 25,
+                    ),
+                    glow,
+                )
 
-            # White border around album
-            draw.rounded_rectangle(
-                (
-                    frame_x - 3,
-                    frame_y - 3,
-                    frame_x + self.album_size + 3,
-                    frame_y + self.album_size + 3,
-                ),
-                radius=self.radius + 2,
-                outline=(255, 255, 255, 200),
-                width=4,
-            )
+                # Paste album art
+                bg.paste(
+                    album,
+                    (
+                        frame_x,
+                        frame_y,
+                    ),
+                    mask,
+                )
+
+                # White border around album
+                draw.rounded_rectangle(
+                    (
+                        frame_x - 3,
+                        frame_y - 3,
+                        frame_x + self.album_size + 3,
+                        frame_y + self.album_size + 3,
+                    ),
+                    radius=self.radius + 2,
+                    outline=(255, 255, 255, 200),
+                    width=4,
+                )
 
             # ─── Text Info (Right Side) ───
             text_x = frame_x + self.album_size + 80
