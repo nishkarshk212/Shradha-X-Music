@@ -45,7 +45,7 @@
     "help_blist": "<u><b>Blacklist commands:</b></u>\n<i>Blacklisted chats and users cannot use the bot.</i>\n\n/blacklist [chat_id|user_id]: Add a chat/user to the blacklist.\n/unblacklist [chat_id|user_id]: Remove a chat/user from the blacklist",
     "help_lang": "<u><b>Language commands:</b></u>\n<i>This bot supports multiple languages.</i>\n\n/lang: Change the language of the bot.",
     "help_ping": "<u><b>Ping commands:</b></u>\n\n/help: Shows the help menu of the bot.\n\n/ping: Check the ping and memory usage of the bot.\n\n/start: Start the bot.\n\n/sudolist: Shows the list of sudo users of the bot.",
-    "help_play": "<u><b>Play commands:</b></u>\n<i>You can play music in the video chat using the following commands.</i>\n\n/play [song name/youtube url/reply to audio]: Play music in the video chat.\n/vplay [song name/youtube url/reply to video]: Play music video in the video chat.\n/play [youtube playlist url]: Play an entire YouTube playlist.\n-f: Force play music in the video chat.\n-v: Plays music video in the video chat.\n\n<b>Example:</b> <code>/play -f -v attention</code>",
+    "help_play": "<u><b>Play commands:</b></u>\n<i>You can play music in the video chat using the following commands.</i>\n\n/play [song name/youtube url/reply to audio]: Play music in the video chat.\n/vplay [song name/youtube url/reply to video]: Play music video in the video chat.\n/play [youtube playlist url]: Play an entire YouTube playlist.\n/playlist [playlist name]: Search and play a YouTube playlist by name.\n/suggest [song name]: Show top songs with one-tap play buttons.\n-f: Force play music in the video chat.\n-v: Plays music video in the video chat.\n\n<b>Example:</b> <code>/play -f -v attention</code>",
     "help_autoplay": "<u><b>AutoPlay commands:</b></u>\n<i>When enabled, related tracks are auto-queued after the queue empties.</i>\n\n/autoplay: Toggle AutoPlay for this chat.",
     "help_queue": "<u><b>Queue commands:</b></u>\n\n/queue: Shows the currently queued tracks in the queue.",
     "help_stats": "<u><b>Stats commands:</b></u>\n\n/stats: Shows the bot's stats.",
@@ -102,6 +102,8 @@
     "playlist_fetch": "Fetching the playlist...\n\nPlease hold on.",
     "playlist_error": "Something went wrong while fetching the playlist.",
     "playlist_queued": "<u><b>Added {0} tracks from the playlist to queue:</b></u>\n\n",
+    "playlist_name_usage": "**Usage:**\n<code>/playlist [playlist name]</code>\n\nSearches YouTube for the playlist and queues it.",
+    "suggest_usage": "**Usage:**\n<code>/suggest [song name]</code>\n\nShows top results you can play with one tap.",
     "queue_curr": "<u><b>Currently playing:</b></u>\n\n<b>Title:</b> <a href={0}>{1}</a>\n<b>Duration:</b> {2}\n<b>Requested by:</b> {3}\n\n",
     "queue_item": "<b>{0}. Title:</b> {1}\n     - {2} min\n\n",
     "queue_fetching": "Fetching queue...",
@@ -154,5 +156,6 @@
     "help_5": "𝐏ʟᴀʏ",
     "help_6": "𝐐ᴜᴇᴜᴇ",
     "help_7": "𝐒ᴛᴀᴛs",
-    "help_8": "𝐒ᴜᴅᴏᴇʀs"
+    "help_8": "𝐒ᴜᴅᴏᴇʀs",
+    "help_autoplay": "𝐀ᴜᴛᴏᴘʟᴀʏ"
 }

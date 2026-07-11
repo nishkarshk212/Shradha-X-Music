@@ -557,6 +557,55 @@ class YouTube:
 
         return tracks
 
+    async def playlist_by_name(
+        self, name: str, user: str, video: bool, limit: int
+    ) -> list[Track]:
+        """Search YouTube for a playlist by NAME and return its tracks.
+
+        Used by the /playlist command. Prefers py_yt PlaylistSearch; the
+        resulting playlist URL is then resolved by the normal playlist()
+        path (which itself has a yt-dlp flat fallback).
+        """
+        url = None
+        try:
+            from py_yt import PlaylistSearch
+
+            res = await PlaylistSearch(name, limit=1).next()
+            items = res.get("result") or []
+            if items:
+                url = items[0].get("url") or items[0].get("link")
+        except Exception as e:
+            logger.error(f"PlaylistSearch error: {e}")
+
+        if not url:
+            return []
+        return await self.playlist(limit, user, url, video)
+
+    async def suggestions(
+        self, query: str, limit: int = 5, video: bool = False
+    ) -> list[Track]:
+        """Return top-N video search results as Track objects (for /suggest)."""
+        out: list[Track] = []
+        try:
+            res = await VideosSearch(query, limit=limit).next()
+            for d in res.get("result", []):
+                out.append(
+                    Track(
+                        id=d.get("id"),
+                        channel_name=d.get("channel", {}).get("name", ""),
+                        duration=d.get("duration"),
+                        duration_sec=utils.to_seconds(d.get("duration")) if d.get("duration") else 0,
+                        title=d.get("title")[:60],
+                        thumbnail=d.get("thumbnails", [{}])[-1].get("url", "").split("?")[0],
+                        url=d.get("link"),
+                        view_count=d.get("viewCount", {}).get("short"),
+                        video=video,
+                    )
+                )
+        except Exception as e:
+            logger.error(f"Suggestions error: {e}")
+        return out
+
     async def download(self, video_id: str, video: bool = False) -> str | None:
         if not video_id or len(video_id) < 3:
             return None
