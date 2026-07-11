@@ -40,7 +40,7 @@ class Config:
 
         # Railway YouTube API
         self.RAILWAY_YT_API_KEY = getenv("RAILWAY_YT_API_KEY", "")
-        self.RAILWAY_YT_API_URL = getenv("RAILWAY_YT_API_URL", "https://youtube-api-music-production-77fb.up.railway.app")
+        self.RAILWAY_YT_API_URL = getenv("RAILWAY_YT_API_URL", "https://youtube-api-music-production-824b.up.railway.app")
 
         # OpenRouter API Key for Chatbot
         self.OPENROUTER_API_KEY = getenv("OPENROUTER_API_KEY", "").strip()

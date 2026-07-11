@@ -11,7 +11,7 @@ from AloneX import logger, config
 from AloneX.helpers import Track, utils
 
 API_URL = config.RAILWAY_YT_API_URL if config.RAILWAY_YT_API_URL else os.environ.get(
-    "RAILWAY_YT_API_URL", "https://youtube-api-music-production-77fb.up.railway.app"
+    "RAILWAY_YT_API_URL", "https://youtube-api-music-production-824b.up.railway.app"
 )
 API_KEY = config.RAILWAY_YT_API_KEY if config.RAILWAY_YT_API_KEY else os.environ.get(
     "RAILWAY_YT_API_KEY", ""
@@ -153,40 +153,38 @@ async def download_local_ytdlp(video_id: str, video: bool = False, use_cookies: 
 
 
 async def download_song_remote(video_id: str) -> str | None:
+    if not API_KEY:
+        return None
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
     try:
-        headers = {"X-API-Key": API_KEY} if API_KEY else {}
+        headers = {"X-API-Key": API_KEY}
         async with aiohttp.ClientSession() as session:
+            # Prefer the /stream endpoint: it returns a single, directly
+            # playable URL. The /download?type=audio endpoint currently only
+            # populates best_video_url (best_audio_url is null), so we don't
+            # rely on it for audio.
             async with session.get(
-                f"{API_URL}/download",
-                params={"id": video_id, "type": "audio"},
+                f"{API_URL}/stream",
+                params={"id": video_id},
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=60)
+                timeout=aiohttp.ClientTimeout(total=60),
             ) as resp:
                 if resp.status != 200:
-                    logger.error(f"Railway API download info failed: {resp.status}")
+                    logger.error(f"Railway API stream info failed: {resp.status}")
                     return None
                 data = await resp.json()
                 if not data.get("success"):
                     logger.error(f"Railway API returned failure: {data}")
                     return None
 
-                download_info = data.get("download", {})
-                audio_url = download_info.get("best_audio_url") or download_info.get("best_video_url")
-
-                if not audio_url:
-                    async with session.get(
-                        f"{API_URL}/stream",
-                        params={"id": video_id},
-                        headers=headers,
-                        timeout=aiohttp.ClientTimeout(total=60)
-                    ) as stream_resp:
-                        if stream_resp.status == 200:
-                            stream_data = await stream_resp.json()
-                            if stream_data.get("success"):
-                                stream_info = stream_data.get("stream", {})
-                                audio_url = stream_info.get("url") or stream_info.get("audio_url")
+                stream_info = data.get("stream", {})
+                audio_url = (
+                    stream_info.get("url")
+                    or stream_info.get("audio_url")
+                    or stream_info.get("best_audio_url")
+                    or stream_info.get("best_video_url")
+                )
 
                 if not audio_url:
                     logger.error("No audio URL found from Railway API")
@@ -194,9 +192,10 @@ async def download_song_remote(video_id: str) -> str | None:
 
             async with session.get(
                 audio_url,
-                timeout=aiohttp.ClientTimeout(total=300)
+                timeout=aiohttp.ClientTimeout(total=300),
+                headers={"Range": "bytes=0-"},
             ) as dl_resp:
-                if dl_resp.status != 200:
+                if dl_resp.status not in (200, 206):
                     logger.error(f"Audio download failed: {dl_resp.status}")
                     return None
                 with open(file_path, "wb") as f:
@@ -281,22 +280,23 @@ async def download_song(link: str) -> str:
     if not video_id or len(video_id) < 3:
         return None
 
-    # Step 1: Try local yt-dlp with cookies first
-    logger.info(f"[Step 1] Attempting local yt-dlp download WITH cookies: {video_id}")
+    # Step 1: Railway API (most reliable when RAILWAY_YT_API_KEY is set)
+    if API_KEY:
+        logger.info(f"[Step 1] Attempting Railway API download: {video_id}")
+        file_path = await download_song_remote(video_id)
+        if file_path:
+            logger.info(f"Railway API download successful: {file_path}")
+            return file_path
+
+    # Step 2: Local yt-dlp with cookies (base64 COOKIES_DATA)
+    logger.info(f"[Step 2] Railway API skipped/failed. Trying local yt-dlp WITH cookies: {video_id}")
     file_path = await download_local_ytdlp(video_id, video=False, use_cookies=True)
     if file_path:
         logger.info(f"Local cookie download successful: {file_path}")
         return file_path
 
-    # Step 2: Try remote Railway API
-    logger.info(f"[Step 2] Local cookie download skipped/failed. Trying Railway API: {video_id}")
-    file_path = await download_song_remote(video_id)
-    if file_path:
-        logger.info(f"Railway API download successful: {file_path}")
-        return file_path
-
-    # Step 3: Try local yt-dlp without cookies
-    logger.info(f"[Step 3] Railway API download failed. Trying local yt-dlp WITHOUT cookies: {video_id}")
+    # Step 3: Local yt-dlp without cookies (last resort; YouTube often bot-blocks)
+    logger.info(f"[Step 3] Cookie download failed. Trying local yt-dlp WITHOUT cookies: {video_id}")
     file_path = await download_local_ytdlp(video_id, video=False, use_cookies=False)
     if file_path:
         logger.info(f"Local download without cookies successful: {file_path}")
@@ -446,8 +446,8 @@ class YouTube:
         Used for instant playback — pytgcalls/ffmpeg can stream directly from URLs.
 
         Priority:
-        1. yt-dlp with cookies (extract_info, no download)
-        2. Railway API /stream endpoint
+        1. Railway API /stream endpoint (most reliable when key is set)
+        2. yt-dlp with cookies (extract_info, no download)
         3. yt-dlp without cookies (extract_info, no download)
         """
         if not video_id or len(video_id) < 3:
@@ -455,22 +455,10 @@ class YouTube:
 
         url = f"https://www.youtube.com/watch?v={video_id}"
 
-        # Step 1: yt-dlp with cookies — just extract URL, no download
-        cookie_file = self.get_cookies()
-        if cookie_file:
-            try:
-                logger.info(f"[Stream Step 1] Resolving stream URL with cookies: {video_id}")
-                stream_url = await self._extract_stream_url(url, video, cookie_file)
-                if stream_url:
-                    logger.info(f"[Stream] Got stream URL via cookies for {video_id}")
-                    return stream_url
-            except Exception as e:
-                logger.error(f"[Stream Step 1] Cookie extract failed: {e}")
-
-        # Step 2: Railway API /stream endpoint
+        # Step 1: Railway API /stream endpoint
         if API_KEY:
             try:
-                logger.info(f"[Stream Step 2] Trying Railway API /stream: {video_id}")
+                logger.info(f"[Stream Step 1] Trying Railway API /stream: {video_id}")
                 headers = {"X-API-Key": API_KEY}
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
@@ -483,17 +471,33 @@ class YouTube:
                             data = await resp.json()
                             if data.get("success"):
                                 stream_info = data.get("stream", {})
-                                stream_url = stream_info.get("url") or stream_info.get("audio_url")
+                                stream_url = (
+                                    stream_info.get("url")
+                                    or stream_info.get("audio_url")
+                                    or stream_info.get("best_video_url")
+                                )
                                 if stream_url:
                                     logger.info(f"[Stream] Got stream URL via Railway API for {video_id}")
                                     return stream_url
                         else:
                             body = (await resp.text())[:500]
                             logger.error(
-                                f"[Stream Step 2] Railway API status {resp.status}: {body}"
+                                f"[Stream Step 1] Railway API status {resp.status}: {body}"
                             )
             except Exception as e:
-                logger.error(f"[Stream Step 2] Railway API failed: {e}")
+                logger.error(f"[Stream Step 1] Railway API failed: {e}")
+
+        # Step 2: yt-dlp with cookies — just extract URL, no download
+        cookie_file = self.get_cookies()
+        if cookie_file:
+            try:
+                logger.info(f"[Stream Step 2] Resolving stream URL with cookies: {video_id}")
+                stream_url = await self._extract_stream_url(url, video, cookie_file)
+                if stream_url:
+                    logger.info(f"[Stream] Got stream URL via cookies for {video_id}")
+                    return stream_url
+            except Exception as e:
+                logger.error(f"[Stream Step 2] Cookie extract failed: {e}")
 
         # Step 3: yt-dlp without cookies — just extract URL
         try:
