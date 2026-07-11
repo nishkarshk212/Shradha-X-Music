@@ -5,6 +5,7 @@ import aiohttp
 import random
 import asyncio
 import yt_dlp
+from yt_dlp.utils import DownloadError
 from py_yt import VideosSearch, Playlist
 from AloneX import logger, config
 from AloneX.helpers import Track, utils
@@ -24,6 +25,31 @@ DOWNLOAD_DIR = "downloads"
 AUDIO_FORMAT = "bestaudio[ext=m4a]/bestaudio/best[acodec!=none]/best"
 VIDEO_FORMAT = "best[height<=720][acodec!=none]/best[acodec!=none]/best"
 
+# Extensions yt-dlp/ffmpeg may produce for media downloads.
+MEDIA_EXTS = {".mp3", ".m4a", ".webm", ".mp4", ".ogg", ".opus", ".aac", ".flac"}
+
+
+def _find_downloaded_file(video_id: str) -> str | None:
+    """Return the actual media file produced for video_id (extension-agnostic).
+
+    yt-dlp may write .webm/.m4a/etc. depending on the selected format, so we
+    must not assume a fixed .mp3/.mp4 extension when checking for success.
+    """
+    if not os.path.isdir(DOWNLOAD_DIR):
+        return None
+    candidates = []
+    for f in os.listdir(DOWNLOAD_DIR):
+        if f.startswith(video_id) and os.path.splitext(f)[1].lower() in MEDIA_EXTS:
+            full = os.path.join(DOWNLOAD_DIR, f)
+            size = os.path.getsize(full)
+            if size > 0:
+                candidates.append((size, full))
+    if not candidates:
+        return None
+    # Largest matching file is the completed download.
+    candidates.sort(reverse=True)
+    return candidates[0][1]
+
 
 def _yt_dlp_options(video: bool, cookie_file: str | None = None) -> dict:
     options = {
@@ -32,8 +58,20 @@ def _yt_dlp_options(video: bool, cookie_file: str | None = None) -> dict:
         "no_warnings": True,
         "nocheckcertificate": True,
         "noplaylist": True,
-        "retries": 2,
-        "fragment_retries": 2,
+        "retries": 3,
+        "fragment_retries": 3,
+        "extractor_args": {
+            "youtube": {
+                # 'missing_pot' keeps formats that would otherwise be dropped
+                # because they require a Proof-of-Origin token. Without this,
+                # yt-dlp raises "Requested format is not available" for many
+                # videos. A browser-like player_client keeps progressive
+                # (audio+video) formats available so a single combined stream
+                # URL works for playback.
+                "formats": ["missing_pot"],
+                "player_client": ["web", "web_safari", "android", "tv_embedded"],
+            }
+        },
     }
     if cookie_file:
         options["cookiefile"] = cookie_file
@@ -44,6 +82,11 @@ async def download_local_ytdlp(video_id: str, video: bool = False, use_cookies: 
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     ext = "mp4" if video else "mp3"
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
+
+    # A previous successful run may have left a usable file already.
+    cached = _find_downloaded_file(video_id)
+    if cached:
+        return cached
     if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
         return file_path
 
@@ -85,15 +128,22 @@ async def download_local_ytdlp(video_id: str, video: bool = False, use_cookies: 
 
         if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
             return file_path
+
+        # yt-dlp may have written a different extension (e.g. .webm/.m4a);
+        # detect the actual produced file rather than assuming .mp3/.mp4.
+        produced = _find_downloaded_file(video_id)
+        if produced:
+            return produced
     except Exception as e:
         logger.error(f"Local yt-dlp download (use_cookies={use_cookies}) failed for {video_id}: {e}")
         # Clean up partial files if any
-        for f in os.listdir(DOWNLOAD_DIR):
-            if f.startswith(video_id) and f != f"{video_id}.{ext}":
-                try:
-                    os.remove(os.path.join(DOWNLOAD_DIR, f))
-                except:
-                    pass
+        if os.path.isdir(DOWNLOAD_DIR):
+            for f in os.listdir(DOWNLOAD_DIR):
+                if f.startswith(video_id) and not f.endswith(f".{ext}"):
+                    try:
+                        os.remove(os.path.join(DOWNLOAD_DIR, f))
+                    except Exception:
+                        pass
     return None
 
 
@@ -462,23 +512,37 @@ class YouTube:
 
         def _extract():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
+                try:
+                    info = ydl.extract_info(url, download=False)
+                except DownloadError:
+                    # The format selector may still fail on some videos (e.g. all
+                    # progressive formats need a PO token). Fall back to a broad
+                    # scan so we can still hand back a usable stream URL.
+                    ydl.params["format"] = "best" if video else "bestaudio/best"
+                    info = ydl.extract_info(url, download=False)
                 if not info:
                     return None
-                # For format with separate audio/video, get the audio URL
-                if not video and info.get("url"):
+
+                # For audio, prefer a direct audio-only URL so pytgcalls gets a
+                # clean stream instead of a merged container.
+                if not video and info.get("acodec") != "none" and info.get("url"):
                     return info["url"]
+
                 # Try requested_formats (when bestvideo+bestaudio merges)
                 formats = info.get("requested_formats", [])
                 if formats:
-                    # For audio, pick the audio stream; for video pick the first (video)
                     if not video:
                         for fmt in formats:
                             if fmt.get("acodec") != "none" and fmt.get("vcodec") == "none":
                                 return fmt.get("url")
+                        # No pure-audio stream in the merge; return the audio side.
+                        for fmt in formats:
+                            if fmt.get("acodec") != "none":
+                                return fmt.get("url")
                         return formats[-1].get("url")
                     else:
                         return formats[0].get("url")
+
                 return info.get("url")
 
         return await loop.run_in_executor(None, _extract)
