@@ -47,6 +47,40 @@ class Bot(pyrogram.Client):
             raise SystemExit("Please promote the bot as an admin in logger group.")
         logger.info(f"Bot started as @{self.username}")
 
+    async def set_commands(self):
+        """Register the / command menu shown by Telegram clients.
+
+        Only user-facing (group) commands are listed so the suggestion menu
+        stays clean. Privileged/sudo commands are intentionally omitted.
+        """
+        from pyrogram.types import BotCommand, BotCommandScopeDefault
+
+        commands = [
+            BotCommand("play", "Play a song / YouTube URL / playlist"),
+            BotCommand("vplay", "Play a video in the voice chat"),
+            BotCommand("playlist", "Search & play a YouTube playlist by name"),
+            BotCommand("suggest", "Show top songs with one-tap play buttons"),
+            BotCommand("queue", "Show the current queue"),
+            BotCommand("skip", "Skip to the next track"),
+            BotCommand("pause", "Pause the stream"),
+            BotCommand("resume", "Resume the stream"),
+            BotCommand("seek", "Seek the stream (seconds)"),
+            BotCommand("stop", "Stop the stream and leave VC"),
+            BotCommand("autoplay", "Toggle autoplay of related tracks"),
+            BotCommand("settings", "Open chat settings"),
+            BotCommand("playmode", "Toggle admin-only play mode"),
+            BotCommand("chatbot", "Toggle chat replies"),
+            BotCommand("lang", "Change language"),
+            BotCommand("ping", "Check bot latency"),
+            BotCommand("stats", "Show bot stats"),
+            BotCommand("help", "Show help menu"),
+        ]
+        try:
+            await self.set_bot_commands(commands, scope=BotCommandScopeDefault())
+            logger.info("Bot commands registered.")
+        except Exception as e:
+            logger.error(f"Failed to set bot commands: {e}")
+
     async def exit(self):
         """
         Asynchronously stops the bot.

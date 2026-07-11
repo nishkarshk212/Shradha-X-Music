@@ -16,6 +16,7 @@ from AloneX.plugins import all_modules
 async def main():
     await db.connect()
     await app.boot()
+    await app.set_commands()
     await userbot.boot()
     await anon.boot()
 
