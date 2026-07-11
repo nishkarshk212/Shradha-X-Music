@@ -12,11 +12,13 @@ async def get_chat_settings(chat_id: int) -> dict:
     if not doc:
         return {
             "cleanup": True,
-            "quickplay": True
+            "quickplay": True,
+            "autoplay": True
         }
     return {
         "cleanup": doc.get("cleanup", True),
-        "quickplay": doc.get("quickplay", True)
+        "quickplay": doc.get("quickplay", True),
+        "autoplay": doc.get("autoplay", True)
     }
 
 async def toggle_chat_setting(chat_id: int, feature: str) -> dict:
@@ -43,7 +45,13 @@ def build_settings_keyboard(chat_id: int, settings: dict) -> types.InlineKeyboar
     btn_quickplay = buttons.ikb(
         text=f"⚡ Quick Play: {'ON' if settings['quickplay'] else 'OFF'}",
         callback_data=f"set_toggle {chat_id} quickplay",
-        style=ButtonStyle.SUCCESS if settings["quickplay"] else ButtonStyle.DANGER
+        style=ButtonStyle.SUCCESS if settings['quickplay'] else ButtonStyle.DANGER
+    )
+    
+    btn_autoplay = buttons.ikb(
+        text=f"🎵 AutoPlay: {'ON' if settings['autoplay'] else 'OFF'}",
+        callback_data=f"set_toggle {chat_id} autoplay",
+        style=ButtonStyle.SUCCESS if settings['autoplay'] else ButtonStyle.DANGER
     )
     
     btn_close = buttons.ikb(
@@ -54,6 +62,7 @@ def build_settings_keyboard(chat_id: int, settings: dict) -> types.InlineKeyboar
     
     keyboard = [
         [btn_quickplay, btn_cleanup],
+        [btn_autoplay],
         [btn_close]
     ]
     return buttons.ikm(keyboard)
@@ -81,7 +90,8 @@ async def settings_menu(_, m: types.Message):
         f"**AloneX settings for {chat_title}**\n\n"
         "⚙️ **Main Settings:**\n"
         "• Quick Play: Instant URL stream without downloading\n"
-        "• Auto Cleanup: Auto-delete downloads after playing",
+        "• Auto Cleanup: Auto-delete downloads after playing\n"
+        "• AutoPlay: Auto-queue related tracks when the queue empties",
         reply_markup=keyboard
     )
 

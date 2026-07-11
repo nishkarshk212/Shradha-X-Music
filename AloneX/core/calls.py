@@ -170,6 +170,29 @@ class TgCall(PyTgCalls):
             pass
 
         if not media:
+            # Queue empty — try AutoPlay (related tracks) if enabled.
+            if await db.get_autoplay(chat_id):
+                played_ids = {t.id for t in queue.get_queue(chat_id)}
+                last = current_media
+                candidates = []
+                try:
+                    if last and last.id:
+                        candidates = await yt.related(
+                            last.id,
+                            last.title,
+                            last.user or (await app.get_me()).mention,
+                            last.video,
+                            limit=1,
+                            exclude_ids=played_ids,
+                        )
+                except Exception as e:
+                    logger.error(f"AutoPlay fetch error: {e}")
+
+                if candidates:
+                    logger.info(f"AutoPlay: queuing related track in {chat_id}")
+                    queue.add(chat_id, candidates[0])
+                    return await self.play_next(chat_id)
+
             return await self.stop(chat_id)
 
         _lang = await lang.get_lang(chat_id)

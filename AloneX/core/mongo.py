@@ -24,6 +24,7 @@ class MongoDB:
         self.admin_play = []
         self.blacklisted = []
         self.cmd_delete = []
+        self.autoplay_status = {}
         self.chatbot_status = {}
         self.notified = []
         self.cache = self.db.cache
@@ -190,7 +191,31 @@ class MongoDB:
             self.chats.extend([chat["_id"] async for chat in self.chatsdb.find()])
         return self.chats
 
-    # COMMAND DELETE
+    # AUTOPLAY METHODS
+    async def get_autoplay(self, chat_id: int) -> bool:
+        """Return whether AutoPlay (related tracks when queue empties) is on.
+
+        Respects the global AUTO_PLAY kill-switch and falls back to enabled.
+        """
+        from AloneX import config
+
+        if not config.AUTO_PLAY:
+            return False
+        if chat_id not in self.autoplay_status:
+            doc = await self.chatsdb.find_one({"_id": chat_id})
+            self.autoplay_status[chat_id] = (
+                doc.get("autoplay", True) if doc else True
+            )
+        return self.autoplay_status[chat_id]
+
+    async def set_autoplay(self, chat_id: int, enabled: bool) -> None:
+        self.autoplay_status[chat_id] = enabled
+        await self.chatsdb.update_one(
+            {"_id": chat_id},
+            {"$set": {"autoplay": enabled}},
+            upsert=True,
+        )
+
     async def get_cmd_delete(self, chat_id: int) -> bool:
         if chat_id not in self.cmd_delete:
             doc = await self.chatsdb.find_one({"_id": chat_id})

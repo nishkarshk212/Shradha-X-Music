@@ -26,6 +26,10 @@ class Config:
         self.AUTO_LEAVE: bool = getenv("AUTO_LEAVE", False)
         self.VIDEO_PLAY: bool = getenv("VIDEO_PLAY", True)
 
+        # Master kill-switch for the AutoPlay (related-tracks) feature.
+        _autoplay = getenv("AUTO_PLAY", "True")
+        self.AUTO_PLAY: bool = str(_autoplay).lower() in ("1", "true", "yes", "on")
+
         self.QUEUE_LIMIT = int(getenv("QUEUE_LIMIT", "50"))
         self.DURATION_LIMIT = int(getenv("DURATION_LIMIT", "5400"))
         self.PLAYLIST_LIMIT = int(getenv("PLAYLIST_LIMIT", "20"))

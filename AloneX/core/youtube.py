@@ -412,6 +412,7 @@ class YouTube:
 
     async def playlist(self, limit: int, user: str, url: str, video: bool) -> list[Track]:
         tracks = []
+        # Primary: py_yt (gives duration/channel metadata).
         try:
             plist = await Playlist.get(url)
             for data in plist.get("videos", [])[:limit]:
@@ -420,7 +421,7 @@ class YouTube:
                     channel_name=data.get("channel", {}).get("name", ""),
                     duration=data.get("duration"),
                     duration_sec=utils.to_seconds(data.get("duration")) if data.get("duration") else 0,
-                    title=data.get("title")[:25],
+                    title=data.get("title")[:60],
                     thumbnail=data.get("thumbnails", [{}])[-1].get("url").split("?")[0],
                     url=data.get("link").split("&list=")[0],
                     user=user,
@@ -429,7 +430,131 @@ class YouTube:
                 )
                 tracks.append(track)
         except Exception as e:
-            logger.error(f"Playlist error: {e}")
+            logger.error(f"Playlist error (py_yt): {e}")
+
+        # Fallback: yt-dlp flat-playlist (no n-challenge, just lists IDs).
+        if not tracks:
+            try:
+                entries = await self._flat_entries(url, limit, self.get_cookies())
+                for e in entries:
+                    tracks.append(self._track_from_entry(e, user, video))
+            except Exception as e:
+                logger.error(f"Playlist fallback error: {e}")
+
+        return tracks[:limit]
+
+    async def _flat_entries(self, url: str, limit: int, cookie_file: str | None = None) -> list[dict]:
+        """List playlist entries cheaply via yt-dlp extract_flat (no download).
+
+        extract_flat only scrapes the page metadata — it never solves the
+        n-signature challenge, so it is far more reliable than full extraction
+        and works without Node/PO tokens.
+        """
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": True,
+            "skip_download": True,
+            "noplaylist": False,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": (
+                        ["tv_downgraded", "web_safari"]
+                        if cookie_file
+                        else ["web_safari", "web"]
+                    )
+                }
+            },
+        }
+        if cookie_file:
+            opts["cookiefile"] = cookie_file
+
+        loop = asyncio.get_event_loop()
+
+        def _extract():
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+            entries = info.get("entries") or []
+            return [e for e in entries if e.get("id")][:limit]
+
+        return await loop.run_in_executor(None, _extract)
+
+    def _track_from_entry(self, e: dict, user: str, video: bool) -> Track:
+        vid = e.get("id")
+        return Track(
+            id=vid,
+            channel_name=e.get("channel") or e.get("uploader") or "",
+            duration="",
+            duration_sec=0,
+            title=(e.get("title") or "Unknown")[:60],
+            thumbnail=e.get("thumbnails", [{}])[-1].get("url", "").split("?")[0]
+            if e.get("thumbnails")
+            else "",
+            url=f"https://www.youtube.com/watch?v={vid}",
+            user=user,
+            view_count="",
+            video=video,
+        )
+
+    async def related(
+        self,
+        video_id: str,
+        title: str,
+        user: str,
+        video: bool,
+        limit: int = 1,
+        exclude_ids: set[str] = None,
+    ) -> list[Track]:
+        """Fetch related/autoplay tracks for a given video.
+
+        Tries YouTube's autoplay mix (RD playlist) first, then falls back to a
+        title search. Excludes the source id and any ids in exclude_ids to
+        avoid immediate repeats.
+        """
+        exclude_ids = exclude_ids or set()
+        exclude_ids.add(video_id)
+        tracks: list[Track] = []
+
+        # 1. YouTube autoplay mix (RD<video_id>) via flat extraction.
+        try:
+            mix_url = f"https://www.youtube.com/watch?v={video_id}&list=RD{video_id}"
+            entries = await self._flat_entries(
+                mix_url, limit + len(exclude_ids), self.get_cookies()
+            )
+            for e in entries:
+                if e.get("id") and e["id"] not in exclude_ids:
+                    tracks.append(self._track_from_entry(e, user, video))
+                if len(tracks) >= limit:
+                    break
+        except Exception as e:
+            logger.error(f"Related mix error: {e}")
+
+        # 2. Fallback: search by title.
+        if not tracks and title:
+            try:
+                _search = VideosSearch(f"{title} official audio", limit=1)
+                results = await _search.next()
+                if results and results["result"]:
+                    data = results["result"][0]
+                    rid = data.get("id")
+                    if rid and rid not in exclude_ids:
+                        tracks.append(
+                            Track(
+                                id=rid,
+                                channel_name=data.get("channel", {}).get("name", ""),
+                                duration=data.get("duration"),
+                                duration_sec=utils.to_seconds(data.get("duration")) if data.get("duration") else 0,
+                                title=data.get("title")[:60],
+                                thumbnail=data.get("thumbnails", [{}])[-1].get("url", "").split("?")[0],
+                                url=data.get("link"),
+                                user=user,
+                                view_count="",
+                                video=video,
+                            )
+                        )
+            except Exception as e:
+                logger.error(f"Related search fallback error: {e}")
+
         return tracks
 
     async def download(self, video_id: str, video: bool = False) -> str | None:
