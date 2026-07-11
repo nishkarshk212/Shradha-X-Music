@@ -24,6 +24,7 @@ class MongoDB:
         self.admin_play = []
         self.blacklisted = []
         self.cmd_delete = []
+        self.chatbot_status = {}
         self.notified = []
         self.cache = self.db.cache
         self.logger = False
@@ -205,6 +206,26 @@ class MongoDB:
         await self.chatsdb.update_one(
             {"_id": chat_id},
             {"$set": {"cmd_delete": delete}},
+            upsert=True,
+        )
+
+    # CHATBOT METHODS
+    async def get_chatbot(self, chat_id: int) -> bool:
+        """Return whether chatbot replies are enabled for a chat."""
+        if chat_id not in self.chatbot_status:
+            doc = await self.chatsdb.find_one({"_id": chat_id})
+            self.chatbot_status[chat_id] = (
+                doc.get("chatbot_enabled", True) if doc else True
+            )
+        return self.chatbot_status[chat_id]
+
+    async def set_chatbot(self, chat_id: int, enabled: bool) -> None:
+        """Persist the chatbot state for a chat and update the cache."""
+        self.chatbot_status[chat_id] = enabled
+
+        await self.chatsdb.update_one(
+            {"_id": chat_id},
+            {"$set": {"chatbot_enabled": enabled}},
             upsert=True,
         )
 

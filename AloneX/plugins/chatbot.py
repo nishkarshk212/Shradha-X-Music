@@ -4,7 +4,8 @@
 import aiohttp
 import re
 from pyrogram import filters, types, enums
-from AloneX import app, db, config
+from AloneX import app, config, db, lang
+from AloneX.helpers import admin_check
 
 # MongoDB collection for chat context
 chatbot_history = db.db.chatbot_history
@@ -36,6 +37,33 @@ async def save_history(chat_id: int, messages: list) -> None:
         upsert=True
     )
 
+@app.on_message(
+    filters.command(["chatbot"]) & filters.group & ~app.bl_users,
+    group=1,
+)
+@lang.language()
+@admin_check
+async def chatbot_toggle(_, m: types.Message):
+    """Enable or disable chatbot replies in the current group."""
+    if len(m.command) != 2 or m.command[1].lower() not in {"on", "off"}:
+        status = "on" if await db.get_chatbot(m.chat.id) else "off"
+        return await m.reply_text(
+            f"Chatbot is currently **{status}**.\n\n"
+            "Use `/chatbot on` or `/chatbot off`."
+        )
+
+    enabled = m.command[1].lower() == "on"
+    current = await db.get_chatbot(m.chat.id)
+    if current == enabled:
+        return await m.reply_text(
+            f"Chatbot is already **{'on' if enabled else 'off'}** in this group."
+        )
+
+    await db.set_chatbot(m.chat.id, enabled)
+    await m.reply_text(
+        f"Chatbot has been turned **{'on' if enabled else 'off'}** in this group."
+    )
+
 @app.on_message(filters.text & ~app.bl_users, group=2)
 async def ananya_chatbot(client, m: types.Message):
     # Ignore all commands (messages starting with /)
@@ -43,6 +71,11 @@ async def ananya_chatbot(client, m: types.Message):
         return
 
     chat_id = m.chat.id
+
+    # Chatbot controls are per group and persist across restarts.
+    if m.chat.type in {enums.ChatType.GROUP, enums.ChatType.SUPERGROUP}:
+        if not await db.get_chatbot(chat_id):
+            return
 
     # Get clean query
     bot_user = await app.get_me()
