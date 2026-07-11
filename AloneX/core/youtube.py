@@ -62,14 +62,19 @@ def _yt_dlp_options(video: bool, cookie_file: str | None = None) -> dict:
         "fragment_retries": 3,
         "extractor_args": {
             "youtube": {
-                # 'missing_pot' keeps formats that would otherwise be dropped
-                # because they require a Proof-of-Origin token. Without this,
-                # yt-dlp raises "Requested format is not available" for many
-                # videos. A browser-like player_client keeps progressive
-                # (audio+video) formats available so a single combined stream
-                # URL works for playback.
-                "formats": ["missing_pot"],
-                "player_client": ["web", "web_safari", "android", "tv_embedded"],
+                # When cookies are present yt-dlp authenticates and should use the
+                # same clients it would normally pick while logged in. These
+                # clients (tv_downgraded / web_safari) expose real, playable,
+                # token-free formats — so songs actually stream/play instead of
+                # failing with "Requested format is not available" or 403ing at
+                # playback time. Without cookies we fall back to public clients,
+                # but YouTube usually blocks those with a bot check, so cookies
+                # are required for reliable playback.
+                "player_client": (
+                    ["tv_downgraded", "web_safari"]
+                    if cookie_file
+                    else ["web", "web_safari", "android", "ios"]
+                ),
             }
         },
     }
