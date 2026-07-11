@@ -234,3 +234,22 @@ class Inline:
                 ],
             ]
         )
+
+    def suggest_markup(
+        self, chat_id: int, items: list
+    ) -> types.InlineKeyboardMarkup:
+        """Per-result Play buttons for /suggest, styled blue (ButtonStyle.PRIMARY).
+
+        `items` is a list of (title, video_id) tuples.
+        """
+        rows = [
+            [
+                self.ikb(
+                    text=f"{i + 1}. {title[:40]}",
+                    callback_data=f"suggest_play {chat_id} {vid}",
+                    style=ButtonStyle.PRIMARY,
+                )
+            ]
+            for i, (title, vid) in enumerate(items)
+        ]
+        return self.ikm(rows)

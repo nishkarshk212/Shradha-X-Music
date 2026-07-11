@@ -30,22 +30,13 @@ async def _suggest(_, m: types.Message):
     _text = f"<b>🔎 Suggestions for:</b> <code>{query}</code>\n\n"
     _text += "<i>Tap a song to play it in the voice chat.</i>"
 
-    keyboard = []
-    for i, t in enumerate(results, start=1):
-        keyboard.append(
-            [
-                buttons.ikb(
-                    text=f"{i}. {t.title[:40]}",
-                    callback_data=f"suggest_play {m.chat.id} {t.id}",
-                )
-            ]
-        )
+    items = [(t.title, t.id) for t in results]
 
     try:
-        await sent.edit_text(_text, reply_markup=buttons.ikm(keyboard))
+        await sent.edit_text(_text, reply_markup=buttons.suggest_markup(m.chat.id, items))
     except Exception:
         await sent.delete()
-        await m.reply_text(_text, reply_markup=buttons.ikm(keyboard))
+        await m.reply_text(_text, reply_markup=buttons.suggest_markup(m.chat.id, items))
 
 
 @app.on_callback_query(filters.regex(r"^suggest_play") & ~app.bl_users)
