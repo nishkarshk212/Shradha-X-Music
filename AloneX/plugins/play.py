@@ -29,35 +29,44 @@ def playlist_to_queue(chat_id: int, tracks: list) -> str:
 
 
 async def _play_track(
-    m: types.Message,
+    msg: types.Message,
     file,
     video: bool,
     tracks: list = None,
     force: bool = False,
+    sent: types.Message = None,
 ) -> None:
-    """Shared play body used by /play, /playlist and the /suggest callback."""
+    """Shared play body used by /play, /playlist and the /suggest callback.
+
+    `msg` is the originating command/callback message (source of chat id,
+    sender mention, and language). `sent` is the bot-owned reply message that
+    gets edited as the track progresses. They differ when cmd_delete is on
+    (the command message is deleted) — never edit `msg` directly.
+    """
     tracks = tracks or []
-    sent = m
-    mention = (m.from_user.mention if getattr(m, "from_user", None) else "ᴜsᴇʀ")
+    if sent is None:
+        sent = msg
+    chat_id = msg.chat.id
+    mention = (msg.from_user.mention if getattr(msg, "from_user", None) else "ᴜsᴇʀ")
 
     if file.duration_sec > config.DURATION_LIMIT:
         return await sent.edit_text(
-            m.lang["play_duration_limit"].format(config.DURATION_LIMIT // 60)
+            msg.lang["play_duration_limit"].format(config.DURATION_LIMIT // 60)
         )
 
     if await db.is_logger():
-        await utils.play_log(m, file.title, file.duration)
+        await utils.play_log(msg, file.title, file.duration)
 
     file.user = mention
     if force:
-        queue.force_add(m.chat.id, file)
+        queue.force_add(chat_id, file)
     else:
-        position = queue.add(m.chat.id, file)
+        position = queue.add(chat_id, file)
 
-        if position != 0 or await db.get_call(m.chat.id):
+        if position != 0 or await db.get_call(chat_id):
             asyncio.create_task(bg_download_task(file))
             await sent.edit_text(
-                m.lang["play_queued"].format(
+                msg.lang["play_queued"].format(
                     position,
                     file.url,
                     file.title,
@@ -65,14 +74,14 @@ async def _play_track(
                     mention,
                 ),
                 reply_markup=buttons.play_queued(
-                    m.chat.id, file.id, m.lang["play_now"]
+                    chat_id, file.id, msg.lang["play_now"]
                 ),
             )
             if tracks:
-                added = playlist_to_queue(m.chat.id, tracks)
+                added = playlist_to_queue(chat_id, tracks)
                 await app.send_message(
-                    chat_id=m.chat.id,
-                    text=m.lang["playlist_queued"].format(len(tracks)) + added,
+                    chat_id=chat_id,
+                    text=msg.lang["playlist_queued"].format(len(tracks)) + added,
                 )
             return
 
@@ -82,9 +91,9 @@ async def _play_track(
             file.file_path = fname
         else:
             from AloneX.plugins.settings import get_chat_settings
-            settings = await get_chat_settings(m.chat.id)
+            settings = await get_chat_settings(chat_id)
 
-            await sent.edit_text(m.lang["play_downloading"])
+            await sent.edit_text(msg.lang["play_downloading"])
             stream_url = None
             if settings.get("quickplay", True):
                 stream_url = await yt.get_stream_url(file.id, video=video)
@@ -94,13 +103,13 @@ async def _play_track(
             else:
                 file.file_path = await yt.download(file.id, video=video)
 
-    await anon.play_media(chat_id=m.chat.id, message=sent, media=file)
+    await anon.play_media(chat_id=chat_id, message=sent, media=file)
     if not tracks:
         return
-    added = playlist_to_queue(m.chat.id, tracks)
+    added = playlist_to_queue(chat_id, tracks)
     await app.send_message(
-        chat_id=m.chat.id,
-        text=m.lang["playlist_queued"].format(len(tracks)) + added,
+        chat_id=chat_id,
+        text=msg.lang["playlist_queued"].format(len(tracks)) + added,
     )
 
 
@@ -164,7 +173,7 @@ async def play_hndlr(
     if not file:
         return await sent.edit_text(m.lang["play_usage"])
 
-    await _play_track(m, file, video, tracks, force)
+    await _play_track(m, file, video, tracks, force, sent=sent)
 
 
 @app.on_message(
@@ -196,7 +205,7 @@ async def playlist_hndlr(
     tracks.remove(file)
     file.message_id = sent.id
 
-    # Reuse the shared play body (it edits `sent`); expose lang/chat on it.
+    # Reuse the shared play body (it edits `sent`); pass both msg and sent.
     setattr(sent, "chat", m.chat)
     setattr(sent, "lang", m.lang)
-    await _play_track(sent, file, video, tracks, force)
+    await _play_track(m, file, video, tracks, force, sent=sent)
