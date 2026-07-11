@@ -76,14 +76,13 @@ async def ananya_chatbot(client, m: types.Message):
         "Content-Type": "application/json",
     }
 
-    # Fallback list: try primary first, then rotate through active free models
     fallback_models = [
         "nvidia/nemotron-3-ultra-550b-a55b:free",
-        "tencent/hy3:free",
-        "liquid/lfm-2.5-1.2b-instruct:free",
         "google/gemma-4-31b-it:free",
-        "qwen/qwen3-coder:free",
         "meta-llama/llama-3.2-3b-instruct:free",
+        "liquid/lfm-2.5-1.2b-instruct:free",
+        "qwen/qwen3-coder:free",
+        "tencent/hy3:free",
     ]
 
     from AloneX import logger
