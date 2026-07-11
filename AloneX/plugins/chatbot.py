@@ -36,7 +36,7 @@ async def save_history(chat_id: int, messages: list) -> None:
         upsert=True
     )
 
-@app.on_message(filters.text & ~app.bl_users)
+@app.on_message(filters.text & ~app.bl_users, group=2)
 async def ananya_chatbot(client, m: types.Message):
     # Ignore all commands (messages starting with /)
     if m.text and m.text.startswith("/"):
