@@ -281,6 +281,10 @@ class YouTube:
         if cookies_data:
             try:
                 import base64
+                cookies_data = cookies_data.strip()
+                missing_padding = len(cookies_data) % 4
+                if missing_padding:
+                    cookies_data += '=' * (4 - missing_padding)
                 decoded = base64.b64decode(cookies_data).decode("utf-8")
                 os.makedirs(self.cookie_dir, exist_ok=True)
                 with open(os.path.join(self.cookie_dir, "cookie_0.txt"), "w") as f:
