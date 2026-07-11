@@ -18,6 +18,27 @@ API_KEY = config.RAILWAY_YT_API_KEY if config.RAILWAY_YT_API_KEY else os.environ
 
 DOWNLOAD_DIR = "downloads"
 
+# Prefer broadly available single-file formats. YouTube increasingly hides some
+# DASH formats behind PO tokens, so strict bestaudio/bestvideo selectors can
+# report "Requested format is not available" even when playable formats exist.
+AUDIO_FORMAT = "bestaudio[ext=m4a]/bestaudio/best[acodec!=none]/best"
+VIDEO_FORMAT = "best[height<=720][acodec!=none]/best[acodec!=none]/best"
+
+
+def _yt_dlp_options(video: bool, cookie_file: str | None = None) -> dict:
+    options = {
+        "format": VIDEO_FORMAT if video else AUDIO_FORMAT,
+        "quiet": True,
+        "no_warnings": True,
+        "nocheckcertificate": True,
+        "noplaylist": True,
+        "retries": 2,
+        "fragment_retries": 2,
+    }
+    if cookie_file:
+        options["cookiefile"] = cookie_file
+    return options
+
 
 async def download_local_ytdlp(video_id: str, video: bool = False, use_cookies: bool = True) -> str | None:
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
@@ -41,15 +62,9 @@ async def download_local_ytdlp(video_id: str, video: bool = False, use_cookies: 
             logger.info("Skipping local cookie download step (no cookie files found).")
             return None
 
-    ydl_opts = {
-        "format": "bestvideo+bestaudio/best" if video else "bestaudio/best",
-        "outtmpl": os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-        "quiet": True,
-        "no_warnings": True,
-        "nocheckcertificate": True,
-    }
+    ydl_opts = _yt_dlp_options(video, cookie_file)
+    ydl_opts["outtmpl"] = os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s")
     if cookie_file:
-        ydl_opts["cookiefile"] = cookie_file
         logger.info(f"Using cookies file: {cookie_file} for local yt-dlp download")
     else:
         logger.info("Attempting local yt-dlp download without cookies.")
@@ -417,6 +432,11 @@ class YouTube:
                                 if stream_url:
                                     logger.info(f"[Stream] Got stream URL via Railway API for {video_id}")
                                     return stream_url
+                        else:
+                            body = (await resp.text())[:500]
+                            logger.error(
+                                f"[Stream Step 2] Railway API status {resp.status}: {body}"
+                            )
             except Exception as e:
                 logger.error(f"[Stream Step 2] Railway API failed: {e}")
 
@@ -435,15 +455,8 @@ class YouTube:
 
     async def _extract_stream_url(self, url: str, video: bool, cookie_file: str | None) -> str | None:
         """Use yt-dlp extract_info (no download) to get the direct media URL."""
-        ydl_opts = {
-            "format": "bestvideo+bestaudio/best" if video else "bestaudio/best",
-            "quiet": True,
-            "no_warnings": True,
-            "nocheckcertificate": True,
-            "skip_download": True,
-        }
-        if cookie_file:
-            ydl_opts["cookiefile"] = cookie_file
+        ydl_opts = _yt_dlp_options(video, cookie_file)
+        ydl_opts["skip_download"] = True
 
         loop = asyncio.get_event_loop()
 

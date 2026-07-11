@@ -2,7 +2,7 @@
 # Chatbot plugin - Shradha (NVIDIA Nemotron Ultra 550B)
 
 import aiohttp
-import re
+import time
 from pyrogram import filters, types, enums
 from AloneX import app, config, db, lang
 from AloneX.helpers import admin_check
@@ -21,6 +21,10 @@ SHRADHA_SYSTEM_PROMPT = (
 )
 
 MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+
+# OpenRouter applies one shared daily quota to all free models. Once that quota
+# is exhausted, trying every fallback only adds latency and duplicate 429 logs.
+_openrouter_blocked_until = 0.0
 
 async def get_history(chat_id: int) -> list:
     """Get recent conversation history for a chat."""
@@ -66,6 +70,7 @@ async def chatbot_toggle(_, m: types.Message):
 
 @app.on_message(filters.text & ~app.bl_users, group=2)
 async def ananya_chatbot(client, m: types.Message):
+    global _openrouter_blocked_until
     # Ignore all commands (messages starting with /)
     if m.text and m.text.startswith("/"):
         return
@@ -83,6 +88,10 @@ async def ananya_chatbot(client, m: types.Message):
     if bot_user.username:
         query_text = query_text.replace(f"@{bot_user.username}", "").strip()
     if not query_text:
+        return
+
+    # Do not call OpenRouter while the account-level free quota is exhausted.
+    if time.time() < _openrouter_blocked_until:
         return
 
     # Show typing indicator
@@ -120,22 +129,20 @@ async def ananya_chatbot(client, m: types.Message):
 
     from AloneX import logger
 
-    for model_name in fallback_models:
-        payload = {
-            "model": model_name,
-            "messages": messages,
-        }
-        # Enable reasoning only for models that support it
-        if any(x in model_name for x in ["nemotron", "r1", "qwen3.7"]):
-            payload["reasoning"] = {"enabled": True}
+    timeout = aiohttp.ClientTimeout(total=20)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        for model_name in fallback_models:
+            payload = {
+                "model": model_name,
+                "messages": messages,
+            }
+            # Enable reasoning only for models that support it
+            if any(x in model_name for x in ["nemotron", "r1", "qwen3.7"]):
+                payload["reasoning"] = {"enabled": True}
 
-        try:
-            logger.info(f"[Shradha] Querying {model_name}...")
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url, headers=headers, json=payload,
-                    timeout=aiohttp.ClientTimeout(total=20)
-                ) as resp:
+            try:
+                logger.info(f"[Shradha] Querying {model_name}...")
+                async with session.post(url, headers=headers, json=payload) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         choices = data.get("choices", [])
@@ -146,19 +153,34 @@ async def ananya_chatbot(client, m: types.Message):
 
                             if reply_content:
                                 await m.reply_text(reply_content)
-                                # Save history with reasoning_details preserved
                                 history.append({"role": "user", "content": query_text})
                                 history.append({
                                     "role": "assistant",
                                     "content": reply_content,
-                                    "reasoning_details": reasoning_details
+                                    "reasoning_details": reasoning_details,
                                 })
                                 await save_history(chat_id, history)
-                                return  # success — stop trying further models
+                                return
                         logger.warning(f"[Shradha] Empty content from {model_name}, trying next...")
-                    else:
-                        body = await resp.text()
-                        logger.error(f"[Shradha] {model_name} status {resp.status}: {body}")
-        except Exception as e:
-            logger.error(f"[Shradha] {model_name} failed: {e}")
+                        continue
+
+                    body = await resp.text()
+                    logger.error(f"[Shradha] {model_name} status {resp.status}: {body}")
+
+                    # Daily free-model quota is shared across models. Respect the
+                    # server reset time instead of pointlessly trying all models.
+                    if resp.status == 429 and "free-models-per-day" in body:
+                        reset = resp.headers.get("X-RateLimit-Reset")
+                        try:
+                            reset_at = float(reset) / 1000
+                        except (TypeError, ValueError):
+                            reset_at = time.time() + 3600
+                        _openrouter_blocked_until = max(reset_at, time.time() + 60)
+                        logger.warning(
+                            "[Shradha] OpenRouter daily quota exhausted; "
+                            f"pausing requests until {int(_openrouter_blocked_until)}."
+                        )
+                        return
+            except Exception as e:
+                logger.error(f"[Shradha] {model_name} failed: {e}")
 
