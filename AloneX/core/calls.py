@@ -181,6 +181,13 @@ class TgCall(PyTgCalls):
             await self.stop(chat_id)
             await message.edit_text(_lang["error_no_call"])
         except exceptions.NoAudioSourceFound:
+            # If we were using a stream URL, try downloading the file and play again
+            if media.id and not media.file_path.startswith("downloads/"):
+                await message.edit_text(_lang["play_downloading"])
+                media.file_path = await yt.download(media.id, video=media.video)
+                if media.file_path:
+                    return await self.play_media(chat_id, message, media, seek_time)
+            
             await message.edit_text(_lang["error_no_audio"])
             await self.play_next(chat_id)
         except (ConnectionNotFound, TelegramServerError):
@@ -310,8 +317,7 @@ class TgCall(PyTgCalls):
         @client.on_update()
         async def update_handler(_, update: types.Update) -> None:
             if isinstance(update, types.StreamEnded):
-                if update.stream_type == types.StreamEnded.Type.AUDIO:
-                    await self.play_next(update.chat_id)
+                await self.play_next(update.chat_id)
             elif isinstance(update, types.ChatUpdate):
                 if update.status in [
                     types.ChatUpdate.Status.KICKED,
