@@ -8,6 +8,7 @@ import os
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
                       RTMPStreamingUnsupported)
 from pyrogram.errors import MessageIdInvalid, MessageNotModified
+from pyrogram.errors.exceptions.bad_request_400 import ChannelPrivate
 from pyrogram.types import InputMediaPhoto, Message
 from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
@@ -220,6 +221,16 @@ class TgCall(PyTgCalls):
                 await message.edit_text(_lang["error_rtmp"])
             except MessageNotModified:
                 pass
+        except MessageIdInvalid:
+            # The card message we tried to edit is already gone (user deleted it
+            # or our reply was removed) — nothing to edit, just keep playing.
+            pass
+        except ChannelPrivate:
+            # Bot was removed from the chat (kicked/left) or the chat became
+            # private between play and the card update. Don't crash the handler —
+            # tear down and return. Without this, the uncaught ChannelPrivate
+            # bubbles up as "Unexpected exception raised in MessageHandler".
+            await self.stop(chat_id)
 
 
     async def _prefetch_next(self, chat_id: int) -> None:

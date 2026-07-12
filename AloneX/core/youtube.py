@@ -604,14 +604,18 @@ class YouTube:
         """
         url = None
         try:
-            from py_yt import PlaylistSearch
+            # NOTE: the class is `PlaylistsSearch` (plural) in py_yt, and each
+            # result item exposes the playlist URL under the `link` key (there is
+            # no `url` key). Importing `PlaylistSearch` raised
+            # "cannot import name 'PlaylistSearch' from 'py_yt'".
+            from py_yt import PlaylistsSearch
 
-            res = await PlaylistSearch(name, limit=1).next()
+            res = await PlaylistsSearch(name, limit=1).next()
             items = res.get("result") or []
             if items:
-                url = items[0].get("url") or items[0].get("link")
+                url = items[0].get("link") or items[0].get("url")
         except Exception as e:
-            logger.error(f"PlaylistSearch error: {e}")
+            logger.error(f"PlaylistsSearch error: {e}")
 
         if not url:
             return []
