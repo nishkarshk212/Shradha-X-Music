@@ -67,6 +67,20 @@ def schedule_bg_fetch(media) -> None:
 class TgCall(PyTgCalls):
     def __init__(self):
         self.clients = []
+        # Per-chat consecutive AutoPlay-failure counter. When YouTube is
+        # blocked (bot-check / format errors), AutoPlay would otherwise keep
+        # queuing a related track that also fails and recurse forever, hammering
+        # YouTube in a tight loop. We cap it and stop cleanly instead.
+        self._autoplay_failures: dict[int, int] = {}
+
+    def _autoplay_ok(self, chat_id: int) -> bool:
+        return self._autoplay_failures.get(chat_id, 0) < 3
+
+    def _note_autoplay_failure(self, chat_id: int) -> None:
+        self._autoplay_failures[chat_id] = self._autoplay_failures.get(chat_id, 0) + 1
+
+    def _reset_autoplay(self, chat_id: int) -> None:
+        self._autoplay_failures[chat_id] = 0
 
     async def pause(self, chat_id: int) -> bool:
         client = await db.get_assistant(chat_id)
@@ -111,7 +125,7 @@ class TgCall(PyTgCalls):
 
         if not media.file_path:
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
-            return await self.play_next(chat_id)
+            return await self.stop(chat_id)
 
         stream = types.MediaStream(
             media_path=media.file_path,
@@ -208,6 +222,10 @@ class TgCall(PyTgCalls):
             await delete_file(current_media.file_path, chat_id)
 
         media = queue.get_next(chat_id)
+        # A real (user-requested or queued) track is available — clear any
+        # prior AutoPlay-block counter so a future empty queue can retry.
+        if media:
+            self._reset_autoplay(chat_id)
         try:
             if media and media.message_id:
                 await app.delete_messages(
@@ -220,8 +238,10 @@ class TgCall(PyTgCalls):
             pass
 
         if not media:
-            # Queue empty — try AutoPlay (related tracks) if enabled.
-            if await db.get_autoplay(chat_id):
+            # Queue empty — try AutoPlay (related tracks) if enabled and we
+            # haven't already exhausted the failed-attempt budget. When YouTube
+            # is blocked this prevents an infinite queue→fail→queue loop.
+            if await db.get_autoplay(chat_id) and self._autoplay_ok(chat_id):
                 played_ids = {t.id for t in queue.get_queue(chat_id)}
                 if current_media and current_media.id:
                     played_ids.add(current_media.id)
@@ -249,12 +269,20 @@ class TgCall(PyTgCalls):
                 )
                 if chosen:
                     logger.info(f"AutoPlay: queuing related track in {chat_id}")
+                    self._note_autoplay_failure(chat_id)
                     queue.add(chat_id, chosen)
                     # Download the AutoPlay track in the background instead of
                     # relying on a flaky live stream URL at play time.
                     schedule_bg_fetch(chosen)
                     return await self.play_next(chat_id)
 
+                # No candidate found — note failure and stop.
+                logger.warning(f"AutoPlay: no candidate, stopping in {chat_id}")
+                self._note_autoplay_failure(chat_id)
+                return await self.stop(chat_id)
+
+            # Queue empty, autoplay off (or capped after repeated failures):
+            # stop cleanly instead of falling through to a media=None path.
             return await self.stop(chat_id)
 
         _lang = await lang.get_lang(chat_id)
