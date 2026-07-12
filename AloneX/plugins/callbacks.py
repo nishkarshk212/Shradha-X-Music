@@ -123,20 +123,22 @@ async def _help(_, query: types.CallbackQuery):
 
     if query.data == "help_back_start":
         _text = query.lang["start_pm"].format(query.from_user.first_name, app.name)
-        return await query.edit_message_text(
-            text=_text,
-            reply_markup=buttons.start_key(query.lang, True)
+        return await buttons.edit(
+            query, _text, reply_markup=buttons.start_key(query.lang, True)
         )
 
     if len(data) == 1:
-        return await query.edit_message_text(
-            text=query.lang["help_menu"],
-            reply_markup=buttons.help_markup(query.lang)
+        return await buttons.edit(
+            query,
+            query.lang["help_menu"],
+            reply_markup=buttons.help_markup(query.lang),
         )
 
     if data[1] == "back":
-        return await query.edit_message_text(
-            text=query.lang["help_menu"], reply_markup=buttons.help_markup(query.lang)
+        return await buttons.edit(
+            query,
+            query.lang["help_menu"],
+            reply_markup=buttons.help_markup(query.lang),
         )
     elif data[1] == "close":
         try:
@@ -145,8 +147,9 @@ async def _help(_, query: types.CallbackQuery):
         except:
             pass
 
-    await query.edit_message_text(
-        text=query.lang[f"help_{data[1]}"],
+    await buttons.edit(
+        query,
+        query.lang.get(f"help_{data[1]}") or lang.languages["en"][f"help_{data[1]}"],
         reply_markup=buttons.help_markup(query.lang, True),
     )
 

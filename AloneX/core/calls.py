@@ -3,6 +3,7 @@
 # This file is part of AloneXMusic
 # ALONE-CODER
 
+import asyncio
 import os
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
                       RTMPStreamingUnsupported)
@@ -28,6 +29,39 @@ async def delete_file(file_path: str, chat_id: int):
             os.remove(file_path)
         except Exception:
             pass
+
+
+# Tracks currently being downloaded in the background so we never start a
+# duplicate download for the same video id.
+_bg_fetching: set[str] = set()
+
+
+async def bg_fetch(media) -> None:
+    """Download a track in the background if it isn't already cached.
+
+    Used to prefetch the next queued song (so the user doesn't wait) and to
+    download AutoPlay tracks (which otherwise only get a flaky live stream URL).
+    """
+    if not media or media.file_path:
+        return
+    vid = getattr(media, "id", None)
+    if not vid or vid in _bg_fetching:
+        return
+    _bg_fetching.add(vid)
+    try:
+        path = await yt.download(vid, video=media.video)
+        if path:
+            media.file_path = path
+    except Exception as e:
+        logger.error(f"bg_fetch failed for {vid}: {e}")
+    finally:
+        _bg_fetching.discard(vid)
+
+
+def schedule_bg_fetch(media) -> None:
+    """Fire-and-forget a background download for a track."""
+    if media and not media.file_path:
+        asyncio.create_task(bg_fetch(media))
 
 
 class TgCall(PyTgCalls):
@@ -124,6 +158,8 @@ class TgCall(PyTgCalls):
                         caption=text,
                         reply_markup=keyboard,
                     )).id
+            # Prefetch the next queued track so it's ready when this ends.
+            await self._prefetch_next(chat_id)
         except FileNotFoundError:
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             await self.play_next(chat_id)
@@ -139,6 +175,20 @@ class TgCall(PyTgCalls):
         except RTMPStreamingUnsupported:
             await self.stop(chat_id)
             await message.edit_text(_lang["error_rtmp"])
+
+
+    async def _prefetch_next(self, chat_id: int) -> None:
+        """Background-download the next queued track so playback is instant.
+
+        Only prefetches one track ahead; the download runs in the background
+        without blocking the current stream.
+        """
+        try:
+            nxt = queue.get_next(chat_id, check=True)
+            if nxt and not nxt.file_path:
+                schedule_bg_fetch(nxt)
+        except Exception as e:
+            logger.error(f"prefetch_next error: {e}")
 
 
     async def replay(self, chat_id: int) -> None:
@@ -200,6 +250,9 @@ class TgCall(PyTgCalls):
                 if chosen:
                     logger.info(f"AutoPlay: queuing related track in {chat_id}")
                     queue.add(chat_id, chosen)
+                    # Download the AutoPlay track in the background instead of
+                    # relying on a flaky live stream URL at play time.
+                    schedule_bg_fetch(chosen)
                     return await self.play_next(chat_id)
 
             return await self.stop(chat_id)

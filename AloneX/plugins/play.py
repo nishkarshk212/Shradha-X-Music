@@ -4,18 +4,15 @@ from pathlib import Path
 from pyrogram import filters, types
 
 from AloneX import anon, app, config, db, lang, queue, tg, yt
+from AloneX.core.calls import schedule_bg_fetch
 from AloneX.helpers import buttons, utils
 from AloneX.helpers._play import checkUB
 
 
 async def bg_download_task(track):
-    if not track.file_path:
-        try:
-            path = await yt.download(track.id, video=track.video)
-            if path:
-                track.file_path = path
-        except Exception:
-            pass
+    # Delegated to the shared, dedup-guarded background fetcher in core.calls
+    # so queued + prefetched downloads never run twice for the same video.
+    schedule_bg_fetch(track)
 
 
 def playlist_to_queue(chat_id: int, tracks: list) -> str:

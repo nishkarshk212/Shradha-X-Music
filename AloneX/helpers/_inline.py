@@ -93,6 +93,21 @@ class Inline:
             )
         return self.ikm(keyboard)
 
+    async def edit(self, query, text, reply_markup=None) -> None:
+        """Edit the message that triggered the callback.
+
+        The start message is sent as a *photo* (reply_photo in start.py), so its
+        text lives in the caption. ``editMessageText`` only works on text
+        messages and raises a BadRequest on a photo, which silently broke the
+        Help / Language buttons on the start image. This picks
+        edit_message_caption vs edit_message_text based on the message type.
+        """
+        if query.message and query.message.photo:
+            return await query.edit_message_caption(
+                caption=text, reply_markup=reply_markup
+            )
+        return await query.edit_message_text(text=text, reply_markup=reply_markup)
+
     def help_markup(
         self, _lang: dict, back: bool = False
     ) -> types.InlineKeyboardMarkup:
@@ -104,10 +119,32 @@ class Inline:
                 ]
             ]
         else:
-            cbs = ["admins", "auth", "blist", "lang", "ping", "play", "autoplay", "queue", "stats", "sudo"]
+            # Map each callback to its (correct) label key. Using positional
+            # f"help_{i}" was wrong: there are 10 categories but only help_0..help_8
+            # labels exist (plus help_autoplay), so the 10th button raised
+            # KeyError and crashed the callback. The callback handler itself
+            # reads f"help_{cb}" for the body (help_admins, help_autoplay, ...),
+            # so the label keys below must match those.
+            label_map = {
+                "admins": "help_0",
+                "auth": "help_1",
+                "blist": "help_2",
+                "lang": "help_3",
+                "ping": "help_4",
+                "play": "help_5",
+                "autoplay": "help_autoplay_lbl",
+                "queue": "help_6",
+                "stats": "help_7",
+                "sudo": "help_8",
+            }
+            cbs = list(label_map.keys())
             buttons = [
-                self.ikb(text=_lang[f"help_{i}"], callback_data=f"help {cb}", style=ButtonStyle.PRIMARY)
-                for i, cb in enumerate(cbs)
+                self.ikb(
+                    text=_lang[label_map[cb]],
+                    callback_data=f"help {cb}",
+                    style=ButtonStyle.PRIMARY,
+                )
+                for cb in cbs
             ]
             rows = [buttons[i : i + 3] for i in range(0, len(buttons), 3)]
             rows.append(

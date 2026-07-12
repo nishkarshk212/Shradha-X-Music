@@ -155,5 +155,6 @@
     "audio": "🎵Audio",
     "video": "🎥Video",
     "enabled": "Enabled",
-    "disabled": "Disabled"
+    "disabled": "Disabled",
+    "help_autoplay_lbl": "𝐀ᴜᴛᴏᴘʟᴀʏ"
 }
