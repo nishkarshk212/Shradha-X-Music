@@ -483,15 +483,36 @@ class YouTube:
 
     def _track_from_entry(self, e: dict, user: str, video: bool) -> Track:
         vid = e.get("id")
+        # Duration from flat extraction is usually a display string
+        # ("3:45") or a seconds int — normalise so the now-playing card shows
+        # a real "Duration : X" instead of a blank field.
+        raw_dur = e.get("duration")
+        if isinstance(raw_dur, int):
+            duration = (
+                f"{raw_dur // 60}:{raw_dur % 60:02d}"
+                if raw_dur >= 60
+                else f"0:{raw_dur:02d}"
+            )
+            duration_sec = raw_dur
+        elif isinstance(raw_dur, str) and raw_dur.strip():
+            duration = raw_dur.strip()
+            duration_sec = utils.to_seconds(duration)
+        else:
+            duration = ""
+            duration_sec = 0
+        title = (e.get("title") or "Unknown")[:60]
+        thumb = (
+            e.get("thumbnails", [{}])[-1].get("url", "").split("?")[0]
+            if e.get("thumbnails")
+            else ""
+        )
         return Track(
             id=vid,
             channel_name=e.get("channel") or e.get("uploader") or "",
-            duration="",
-            duration_sec=0,
-            title=(e.get("title") or "Unknown")[:60],
-            thumbnail=e.get("thumbnails", [{}])[-1].get("url", "").split("?")[0]
-            if e.get("thumbnails")
-            else "",
+            duration=duration,
+            duration_sec=duration_sec,
+            title=title,
+            thumbnail=thumb,
             url=f"https://www.youtube.com/watch?v={vid}",
             user=user,
             view_count="",
