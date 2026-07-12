@@ -22,7 +22,10 @@ DOWNLOAD_DIR = "downloads"
 # Prefer broadly available single-file formats. YouTube increasingly hides some
 # DASH formats behind PO tokens, so strict bestaudio/bestvideo selectors can
 # report "Requested format is not available" even when playable formats exist.
-AUDIO_FORMAT = "bestaudio[ext=m4a]/bestaudio/best[acodec!=none]/best"
+# Don't lead with ext=m4a — the FFmpegExtractAudio postprocessor converts to mp3
+# regardless of the source container, so the leading filter only ever causes
+# spurious "Requested format is not available" failures.
+AUDIO_FORMAT = "bestaudio/best[acodec!=none]/best"
 VIDEO_FORMAT = "best[height<=720][acodec!=none]/best[acodec!=none]/best"
 
 # Extensions yt-dlp/ffmpeg may produce for media downloads.
@@ -62,18 +65,17 @@ def _yt_dlp_options(video: bool, cookie_file: str | None = None) -> dict:
         "fragment_retries": 3,
         "extractor_args": {
             "youtube": {
-                # When cookies are present yt-dlp authenticates and should use the
-                # same clients it would normally pick while logged in. These
-                # clients (tv_downgraded / web_safari) expose real, playable,
-                # token-free formats — so songs actually stream/play instead of
-                # failing with "Requested format is not available" or 403ing at
-                # playback time. Without cookies we fall back to public clients,
-                # but YouTube usually blocks those with a bot check, so cookies
-                # are required for reliable playback.
+                # Prefer the public web-based clients (web_safari/web/android/ios)
+                # which reliably return playable audio formats. tv_downgraded is
+                # kept only as a trailing last resort: it now frequently returns
+                # formats that don't satisfy the audio selector, raising
+                # "Requested format is not available". Cookies are still passed
+                # through (cookiefile) when available for authenticated fetches,
+                # but we no longer lead with the client that causes the failure.
                 "player_client": (
-                    ["tv_downgraded", "web_safari"]
+                    ["web_safari", "web", "android", "ios", "tv_downgraded"]
                     if cookie_file
-                    else ["web", "web_safari", "android", "ios"]
+                    else ["web_safari", "web", "android", "ios"]
                 ),
             }
         },
@@ -459,7 +461,7 @@ class YouTube:
             "extractor_args": {
                 "youtube": {
                     "player_client": (
-                        ["tv_downgraded", "web_safari"]
+                        ["web_safari", "web", "android", "ios", "tv_downgraded"]
                         if cookie_file
                         else ["web_safari", "web"]
                     )
