@@ -7,7 +7,7 @@ import asyncio
 import os
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
                       RTMPStreamingUnsupported)
-from pyrogram.errors import MessageIdInvalid
+from pyrogram.errors import MessageIdInvalid, MessageNotModified
 from pyrogram.types import InputMediaPhoto, Message
 from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
@@ -124,7 +124,10 @@ class TgCall(PyTgCalls):
         )
 
         if not media.file_path:
-            await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
+            try:
+                await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
+            except MessageNotModified:
+                pass
             return await self.stop(chat_id)
 
         stream = types.MediaStream(
@@ -157,45 +160,66 @@ class TgCall(PyTgCalls):
                 )
                 keyboard = buttons.controls(chat_id)
                 try:
-                    await message.edit_media(
-                        media=InputMediaPhoto(
-                            media=_thumb,
+                    try:
+                        await message.edit_media(
+                            media=InputMediaPhoto(
+                                media=_thumb,
+                                caption=text,
+                            ),
+                            reply_markup=keyboard,
+                        )
+                        media.message_id = message.id
+                    except MessageIdInvalid:
+                        media.message_id = (await app.send_photo(
+                            chat_id=chat_id,
+                            photo=_thumb,
                             caption=text,
-                        ),
-                        reply_markup=keyboard,
-                    )
-                    media.message_id = message.id
-                except MessageIdInvalid:
-                    media.message_id = (await app.send_photo(
-                        chat_id=chat_id,
-                        photo=_thumb,
-                        caption=text,
-                        reply_markup=keyboard,
-                    )).id
+                            reply_markup=keyboard,
+                        )).id
+                except MessageNotModified:
+                    pass
             # Prefetch the next queued track so it's ready when this ends.
             await self._prefetch_next(chat_id)
         except FileNotFoundError:
-            await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
+            try:
+                await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
+            except MessageNotModified:
+                pass
             await self.play_next(chat_id)
         except exceptions.NoActiveGroupCall:
             await self.stop(chat_id)
-            await message.edit_text(_lang["error_no_call"])
+            try:
+                await message.edit_text(_lang["error_no_call"])
+            except MessageNotModified:
+                pass
         except exceptions.NoAudioSourceFound:
             # If we were using a stream URL, try downloading the file and play again
             if media.id and not media.file_path.startswith("downloads/"):
-                await message.edit_text(_lang["play_downloading"])
+                try:
+                    await message.edit_text(_lang["play_downloading"])
+                except MessageNotModified:
+                    pass
                 media.file_path = await yt.download(media.id, video=media.video)
                 if media.file_path:
                     return await self.play_media(chat_id, message, media, seek_time)
             
-            await message.edit_text(_lang["error_no_audio"])
+            try:
+                await message.edit_text(_lang["error_no_audio"])
+            except MessageNotModified:
+                pass
             await self.play_next(chat_id)
         except (ConnectionNotFound, TelegramServerError):
             await self.stop(chat_id)
-            await message.edit_text(_lang["error_tg_server"])
+            try:
+                await message.edit_text(_lang["error_tg_server"])
+            except MessageNotModified:
+                pass
         except RTMPStreamingUnsupported:
             await self.stop(chat_id)
-            await message.edit_text(_lang["error_rtmp"])
+            try:
+                await message.edit_text(_lang["error_rtmp"])
+            except MessageNotModified:
+                pass
 
 
     async def _prefetch_next(self, chat_id: int) -> None:
