@@ -31,6 +31,24 @@ VIDEO_FORMAT = "best[height<=720][acodec!=none]/best[acodec!=none]/best"
 # Extensions yt-dlp/ffmpeg may produce for media downloads.
 MEDIA_EXTS = {".mp3", ".m4a", ".webm", ".mp4", ".ogg", ".opus", ".aac", ".flac"}
 
+# yt-dlp 2026.x solved YouTube's n-signature challenge with a JS runtime.
+# Default/deno is unreliable in containers and silently falls back to a broken
+# runtime, producing "Sign in to confirm you're a bot". We require Node (>= 23.5
+# must be installed in the image — see Dockerfile) and select it explicitly.
+# NOTE: the option is a DICT {"node": {}}, not a list; a list raises ValueError.
+JS_RUNTIMES = {"node": {}}
+
+
+def _with_js_runtime(opts: dict) -> dict:
+    """Return a copy of yt-dlp options with the Node JS runtime selected.
+
+    Used by every YoutubeDL() construction so YouTube's n-signature challenge is
+    solved reliably (the container image installs Node >= 23.5 for this).
+    """
+    merged = dict(opts)
+    merged["js_runtimes"] = JS_RUNTIMES
+    return merged
+
 
 def _find_downloaded_file(video_id: str) -> str | None:
     """Return the actual media file produced for video_id (extension-agnostic).
@@ -129,7 +147,7 @@ async def download_local_ytdlp(video_id: str, video: bool = False, use_cookies: 
     try:
         loop = asyncio.get_event_loop()
         def _download():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with yt_dlp.YoutubeDL(_with_js_runtime(ydl_opts)) as ydl:
                 ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
         await loop.run_in_executor(None, _download)
 
@@ -474,7 +492,7 @@ class YouTube:
         loop = asyncio.get_event_loop()
 
         def _extract():
-            with yt_dlp.YoutubeDL(opts) as ydl:
+            with yt_dlp.YoutubeDL(_with_js_runtime(opts)) as ydl:
                 info = ydl.extract_info(url, download=False)
             entries = info.get("entries") or []
             return [e for e in entries if e.get("id")][:limit]
@@ -717,7 +735,7 @@ class YouTube:
         loop = asyncio.get_event_loop()
 
         def _extract():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with yt_dlp.YoutubeDL(_with_js_runtime(ydl_opts)) as ydl:
                 try:
                     info = ydl.extract_info(url, download=False)
                 except DownloadError:
