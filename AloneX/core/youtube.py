@@ -125,11 +125,6 @@ async def download_local_ytdlp(video_id: str, video: bool = False, use_cookies: 
         if not cookie_file and os.path.exists("cookies.txt"):
             cookie_file = "cookies.txt"
 
-        # If use_cookies is requested but no cookie file is found, skip this step
-        if not cookie_file:
-            logger.info("Skipping local cookie download step (no cookie files found).")
-            return None
-
     ydl_opts = _yt_dlp_options(video, cookie_file)
     ydl_opts["outtmpl"] = os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s")
     if cookie_file:
@@ -164,7 +159,7 @@ async def download_local_ytdlp(video_id: str, video: bool = False, use_cookies: 
         # Clean up partial files if any
         if os.path.isdir(DOWNLOAD_DIR):
             for f in os.listdir(DOWNLOAD_DIR):
-                if f.startswith(video_id) and not f.endswith(f".{ext}"):
+                if f.startswith(video_id):
                     try:
                         os.remove(os.path.join(DOWNLOAD_DIR, f))
                     except Exception:
