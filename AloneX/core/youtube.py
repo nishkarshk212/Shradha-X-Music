@@ -175,10 +175,29 @@ async def download_song_remote(video_id: str) -> str | None:
     try:
         headers = {"X-API-Key": API_KEY}
         async with aiohttp.ClientSession() as session:
-            # Prefer the /stream endpoint: it returns a single, directly
-            # playable URL. The /download?type=audio endpoint currently only
-            # populates best_video_url (best_audio_url is null), so we don't
-            # rely on it for audio.
+            # Prefer the /play/audio PROXY. Unlike /stream (which returns a raw
+            # googlevideo URL IP-locked to this API's egress — and therefore 403
+            # from the bot's own egress), the proxy re-fetches the bytes through
+            # the API's network so the bot (a separate Railway egress) can stream
+            # them. This is the intended fix for the "Sign in / 403" wall.
+            async with session.get(
+                f"{API_URL}/play/audio",
+                params={"id": video_id},
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=300),
+            ) as dl_resp:
+                if dl_resp.status in (200, 206):
+                    with open(file_path, "wb") as f:
+                        async for chunk in dl_resp.content.iter_chunked(131072):
+                            f.write(chunk)
+                    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                        logger.info(f"Railway proxy /play/audio download successful: {file_path}")
+                        return file_path
+                else:
+                    logger.error(f"Railway proxy /play/audio status {dl_resp.status}")
+
+            # Fallback: /stream -> raw googlevideo URL (works only if the bot
+            # shares the API's egress; kept for self-hosted setups where it does).
             async with session.get(
                 f"{API_URL}/stream",
                 params={"id": video_id},
@@ -236,6 +255,27 @@ async def download_video_remote(video_id: str) -> str | None:
     try:
         headers = {"X-API-Key": API_KEY} if API_KEY else {}
         async with aiohttp.ClientSession() as session:
+            # Prefer the /play/video/hq PROXY so the bot (separate Railway
+            # egress) pulls bytes through the API network instead of the
+            # IP-locked raw googlevideo URL that /video/hq returns.
+            async with session.get(
+                f"{API_URL}/play/video/hq",
+                params={"id": video_id},
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=600),
+            ) as dl_resp:
+                if dl_resp.status in (200, 206):
+                    with open(file_path, "wb") as f:
+                        async for chunk in dl_resp.content.iter_chunked(131072):
+                            f.write(chunk)
+                    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                        logger.info(f"Railway proxy /play/video/hq download successful: {file_path}")
+                        return file_path
+                else:
+                    logger.error(f"Railway proxy /play/video/hq status {dl_resp.status}")
+
+            # Fallback: raw URL from /video/hq or /download (only works if the
+            # bot shares the API's egress).
             async with session.get(
                 f"{API_URL}/video/hq",
                 params={"id": video_id},
@@ -668,6 +708,35 @@ class YouTube:
             return None
 
         url = f"https://www.youtube.com/watch?v={video_id}"
+
+        # Step 0: Railway API /play/audio PROXY — returns bytes through the
+        # API's egress so the bot (a different Railway egress) can stream them,
+        # bypassing the IP-lock on the raw googlevideo URL that /stream hands
+        # back. This is the reliable path; the others are fallbacks.
+        if API_KEY:
+            try:
+                logger.info(f"[Stream Step 0] Trying Railway API /play/audio proxy: {video_id}")
+                headers = {"X-API-Key": API_KEY}
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        f"{API_URL}/play/audio",
+                        params={"id": video_id},
+                        headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=30),
+                    ) as resp:
+                        if resp.status in (200, 206):
+                            # Streaming proxy: the URL IS the proxied media.
+                            # Return the proxy URL itself (with key) so pytgcalls
+                            # can pull bytes through the API egress.
+                            proxy_url = str(resp.url)
+                            logger.info(f"[Stream] Got proxied stream URL via /play/audio for {video_id}")
+                            return proxy_url
+                        else:
+                            logger.error(
+                                f"[Stream Step 0] Railway proxy /play/audio status {resp.status}"
+                            )
+            except Exception as e:
+                logger.error(f"[Stream Step 0] Railway proxy /play/audio failed: {e}")
 
         # Step 1: Railway API /stream endpoint
         if API_KEY:
