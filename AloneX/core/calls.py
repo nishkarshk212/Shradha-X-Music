@@ -159,7 +159,7 @@ class TgCall(PyTgCalls):
                     media.duration,
                     media.user,
                 )
-                keyboard = buttons.controls(chat_id)
+                keyboard = await buttons.controls(chat_id)
                 try:
                     try:
                         await message.edit_media(
@@ -323,8 +323,11 @@ class TgCall(PyTgCalls):
                     self._note_autoplay_failure(chat_id)
                     return await self.stop(chat_id)
 
-            # Queue empty, autoplay off (or capped after repeated failures):
-            # stop cleanly instead of falling through to a media=None path.
+        # A real or AutoPlay-chosen track is now in `media`; fall through to
+        # the playback path below. If we get here with no track (queue empty,
+        # autoplay off, or capped after repeated failures), stop cleanly
+        # instead of falling through to a media=None path.
+        if not media:
             return await self.stop(chat_id)
 
         _lang = await lang.get_lang(chat_id)

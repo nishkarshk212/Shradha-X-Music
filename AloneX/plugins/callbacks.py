@@ -7,7 +7,7 @@ import re
 
 from pyrogram import filters, types
 
-from AloneX import anon, app, db, lang, queue, tg, yt
+from AloneX import anon, app, config, db, lang, queue, tg, yt
 from AloneX.helpers import admin_check, buttons, can_manage_vc
 
 
@@ -106,11 +106,38 @@ async def _controls(_, query: types.CallbackQuery):
                 query.message.caption.html or query.message.text.html,
                 flags=re.DOTALL,
             )
-            keyboard = buttons.controls(
+            keyboard = await buttons.controls(
                 chat_id, status=status if action != "resume" else None
             )
         await query.edit_message_text(
             f"{mtext}\n\n<blockquote>{reply}</blockquote>", reply_markup=keyboard
+        )
+    except:
+        pass
+
+
+@app.on_callback_query(filters.regex(r"^ap_toggle") & ~app.bl_users)
+@lang.language()
+@can_manage_vc
+async def _ap_toggle(_, query: types.CallbackQuery):
+    """Toggle AutoPlay from the now-playing card. Re-renders the controls
+    so the button flips to green (ON) or red (OFF) immediately."""
+    chat_id = int(query.data.split()[1])
+
+    if not config.AUTO_PLAY:
+        return await query.answer(
+            "AutoPlay is disabled globally by the owner.", show_alert=True
+        )
+    if not await db.get_call(chat_id):
+        return await query.answer(query.lang["not_playing"], show_alert=True)
+
+    setting = not await db.get_autoplay(chat_id)
+    await db.set_autoplay(chat_id, setting)
+    await query.answer(query.lang["autoplay_on" if setting else "autoplay_off"])
+
+    try:
+        await query.edit_message_reply_markup(
+            reply_markup=await buttons.controls(chat_id)
         )
     except:
         pass

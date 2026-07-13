@@ -7,7 +7,7 @@
 from pyrogram import enums, types
 from pyrogram.enums import ButtonStyle
 
-from AloneX import app, config, lang
+from AloneX import app, config, db, lang
 from AloneX.core.lang import lang_codes
 
 
@@ -19,7 +19,7 @@ class Inline:
     def cancel_dl(self, text) -> types.InlineKeyboardMarkup:
         return self.ikm([[self.ikb(text=text, callback_data="cancel_dl")]])
 
-    def controls(
+    async def controls(
         self,
         chat_id: int,
         status: str = None,
@@ -51,7 +51,7 @@ class Inline:
             btn_style_3 = styles[(style_offset + 2) % len(styles)]
             btn_style_4 = styles[(style_offset + 1) % len(styles)]
             btn_style_5 = styles[(style_offset) % len(styles)]
-            
+
             keyboard.append(
                 [
                     self.ikb(text="▷", callback_data=f"controls resume {chat_id}", style=btn_style_1),
@@ -63,7 +63,22 @@ class Inline:
             )
             if not _lang:
                 _lang = lang.languages["en"]
-            
+
+            # AutoPlay toggle button — green (SUCCESS) when enabled, red
+            # (DANGER) when disabled. Clickable: flips the per-chat setting.
+            ap_on = await db.get_autoplay(chat_id)
+            ap_text = "🤖 AutoPlay: ON" if ap_on else "🤖 AutoPlay: OFF"
+            ap_style = ButtonStyle.SUCCESS if ap_on else ButtonStyle.DANGER
+            keyboard.append(
+                [
+                    self.ikb(
+                        text=ap_text,
+                        callback_data=f"ap_toggle {chat_id}",
+                        style=ap_style,
+                    ),
+                ]
+            )
+
             btn_style_add = styles[(style_offset + 2) % len(styles)]
             keyboard.append(
                 [
@@ -74,7 +89,7 @@ class Inline:
                     ),
                 ]
             )
-            
+
             btn_style_channel = styles[(style_offset + 1) % len(styles)]
             btn_style_close = styles[(style_offset) % len(styles)]
             keyboard.append(

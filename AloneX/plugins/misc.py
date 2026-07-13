@@ -87,7 +87,7 @@ async def update_timer(length=10):
                 await app.edit_message_reply_markup(
                     chat_id=chat_id,
                     message_id=message_id,
-                    reply_markup=buttons.controls(
+                    reply_markup=await buttons.controls(
                         chat_id=chat_id, timer=timer, remove=remove, style_offset=style_offset
                     ),
                 )
@@ -108,7 +108,7 @@ async def vc_watcher(sleep=15):
                     sent = await app.edit_message_reply_markup(
                         chat_id=chat_id,
                         message_id=media.message_id,
-                        reply_markup=buttons.controls(
+                        reply_markup=await buttons.controls(
                             chat_id=chat_id, status=_lang["stopped"], remove=True
                         ),
                     )

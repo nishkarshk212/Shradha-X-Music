@@ -22,5 +22,5 @@ async def _resume(_, m: types.Message):
     await anon.resume(m.chat.id)
     await m.reply_text(
         text=m.lang["play_resumed"].format(m.from_user.mention),
-        reply_markup=buttons.controls(m.chat.id),
+        reply_markup=await buttons.controls(m.chat.id),
     )

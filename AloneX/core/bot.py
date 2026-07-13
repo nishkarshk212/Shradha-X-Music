@@ -69,7 +69,6 @@ class Bot(pyrogram.Client):
             BotCommand("autoplay", "Toggle autoplay of related tracks"),
             BotCommand("settings", "Open chat settings"),
             BotCommand("playmode", "Toggle admin-only play mode"),
-            BotCommand("chatbot", "Toggle chat replies"),
             BotCommand("lang", "Change language"),
             BotCommand("ping", "Check bot latency"),
             BotCommand("stats", "Show bot stats"),
