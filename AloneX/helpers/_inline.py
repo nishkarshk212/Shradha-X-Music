@@ -67,7 +67,7 @@ class Inline:
             # AutoPlay toggle button — green (SUCCESS) when enabled, red
             # (DANGER) when disabled. Clickable: flips the per-chat setting.
             ap_on = await db.get_autoplay(chat_id)
-            ap_text = "🤖 AutoPlay: ON" if ap_on else "🤖 AutoPlay: OFF"
+            ap_text = "AutoPlay: ON" if ap_on else "AutoPlay: OFF"
             ap_style = ButtonStyle.SUCCESS if ap_on else ButtonStyle.DANGER
             keyboard.append(
                 [
