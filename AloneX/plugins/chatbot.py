@@ -26,6 +26,10 @@ MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
 # is exhausted, trying every fallback only adds latency and duplicate 429 logs.
 _openrouter_blocked_until = 0.0
 
+def _is_free(model: str) -> bool:
+    """True for OpenRouter's :free-tier models (the ones that share a daily quota)."""
+    return model.endswith(":free")
+
 async def get_history(chat_id: int) -> list:
     """Get recent conversation history for a chat."""
     doc = await chatbot_history.find_one({"chat_id": chat_id})
@@ -90,10 +94,6 @@ async def ananya_chatbot(client, m: types.Message):
     if not query_text:
         return
 
-    # Do not call OpenRouter while the account-level free quota is exhausted.
-    if time.time() < _openrouter_blocked_until:
-        return
-
     # Show typing indicator
     await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
 
@@ -118,7 +118,9 @@ async def ananya_chatbot(client, m: types.Message):
         "Content-Type": "application/json",
     }
 
-    fallback_models = [
+    # Free-tier models share one daily quota; paid models serve as a last-resort
+    # fallback once that quota is exhausted (or if every free model fails).
+    free_models = [
         "nvidia/nemotron-3-ultra-550b-a55b:free",
         "google/gemma-4-31b-it:free",
         "meta-llama/llama-3.2-3b-instruct:free",
@@ -126,18 +128,28 @@ async def ananya_chatbot(client, m: types.Message):
         "qwen/qwen3-coder:free",
         "tencent/hy3:free",
     ]
+    paid_models = [
+        "google/gemini-3.5-flash",
+        "meta-llama/llama-3.3-70b-instruct",
+    ]
+    fallback_models = free_models + paid_models
 
     from AloneX import logger
 
     timeout = aiohttp.ClientTimeout(total=20)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         for model_name in fallback_models:
+            # Skip free models while their shared daily quota is still cooling
+            # down; paid fallbacks remain available so the chatbot stays alive.
+            if _is_free(model_name) and time.time() < _openrouter_blocked_until:
+                continue
+
             payload = {
                 "model": model_name,
                 "messages": messages,
             }
             # Enable reasoning only for models that support it
-            if any(x in model_name for x in ["nemotron", "r1", "qwen3.7"]):
+            if any(x in model_name for x in ["nemotron", "r1", "qwen3.7", "gemini"]):
                 payload["reasoning"] = {"enabled": True}
 
             try:
@@ -167,8 +179,9 @@ async def ananya_chatbot(client, m: types.Message):
                     body = await resp.text()
                     logger.error(f"[Shradha] {model_name} status {resp.status}: {body}")
 
-                    # Daily free-model quota is shared across models. Respect the
-                    # server reset time instead of pointlessly trying all models.
+                    # Daily free-model quota is shared across all free models.
+                    # When hit, skip the remaining free models but still try the
+                    # paid fallbacks instead of going completely silent.
                     if resp.status == 429 and "free-models-per-day" in body:
                         reset = resp.headers.get("X-RateLimit-Reset")
                         try:
@@ -177,10 +190,13 @@ async def ananya_chatbot(client, m: types.Message):
                             reset_at = time.time() + 3600
                         _openrouter_blocked_until = max(reset_at, time.time() + 60)
                         logger.warning(
-                            "[Shradha] OpenRouter daily quota exhausted; "
-                            f"pausing requests until {int(_openrouter_blocked_until)}."
+                            "[Shradha] OpenRouter daily free quota exhausted; "
+                            f"pausing free models until {int(_openrouter_blocked_until)}."
                         )
+                        if _is_free(model_name):
+                            continue
                         return
+                    continue
             except Exception as e:
                 logger.error(f"[Shradha] {model_name} failed: {e}")
 
