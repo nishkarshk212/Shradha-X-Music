@@ -240,7 +240,7 @@ class MongoDB:
         if chat_id not in self.chatbot_status:
             doc = await self.chatsdb.find_one({"_id": chat_id})
             self.chatbot_status[chat_id] = (
-                doc.get("chatbot_enabled", True) if doc else True
+                doc.get("chatbot_enabled", False) if doc else False
             )
         return self.chatbot_status[chat_id]
 

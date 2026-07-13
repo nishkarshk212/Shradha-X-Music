@@ -311,17 +311,17 @@ class TgCall(PyTgCalls):
                 )
                 if chosen:
                     logger.info(f"AutoPlay: queuing related track in {chat_id}")
-                    self._note_autoplay_failure(chat_id)
+                    self._reset_autoplay(chat_id)
                     queue.add(chat_id, chosen)
                     # Download the AutoPlay track in the background instead of
                     # relying on a flaky live stream URL at play time.
                     schedule_bg_fetch(chosen)
-                    return await self.play_next(chat_id)
-
-                # No candidate found — note failure and stop.
-                logger.warning(f"AutoPlay: no candidate, stopping in {chat_id}")
-                self._note_autoplay_failure(chat_id)
-                return await self.stop(chat_id)
+                    media = chosen
+                else:
+                    # No candidate found — note failure and stop.
+                    logger.warning(f"AutoPlay: no candidate, stopping in {chat_id}")
+                    self._note_autoplay_failure(chat_id)
+                    return await self.stop(chat_id)
 
             # Queue empty, autoplay off (or capped after repeated failures):
             # stop cleanly instead of falling through to a media=None path.
@@ -334,6 +334,7 @@ class TgCall(PyTgCalls):
             if not media.file_path:
                 media.file_path = await yt.download(media.id, video=media.video)
             if not media.file_path:
+                self._note_autoplay_failure(chat_id)
                 await self.stop(chat_id)
                 return await msg.edit_text(
                     _lang["error_no_file"].format(config.SUPPORT_CHAT)
