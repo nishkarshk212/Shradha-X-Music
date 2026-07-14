@@ -406,17 +406,23 @@ class YouTube:
         if cookies_data:
             try:
                 import base64
+                import gzip as _gzip
                 cookies_data = cookies_data.strip()
                 missing_padding = len(cookies_data) % 4
                 if missing_padding:
                     cookies_data += '=' * (4 - missing_padding)
-                decoded = base64.b64decode(cookies_data).decode("utf-8")
+                decoded_bytes = base64.b64decode(cookies_data)
+                # Handle gzip-compressed cookies (magic bytes \x1f\x8b)
+                if decoded_bytes[:2] == b'\x1f\x8b':
+                    decoded_bytes = _gzip.decompress(decoded_bytes)
+                decoded = decoded_bytes.decode("utf-8")
                 os.makedirs(self.cookie_dir, exist_ok=True)
                 with open(os.path.join(self.cookie_dir, "cookie_0.txt"), "w") as f:
                     f.write(decoded)
                 logger.info("Successfully loaded cookies from COOKIES_DATA environment variable.")
             except Exception as e:
                 logger.error(f"Error decoding COOKIES_DATA environment variable: {e}")
+
 
     def get_cookies(self):
         if not os.path.exists(self.cookie_dir):
