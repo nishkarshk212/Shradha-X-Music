@@ -184,23 +184,71 @@ def _pick_audio_stream(streams: list[dict]) -> dict | None:
     return streams[0]
 
 
+async def _download_from_proxy(
+    session: aiohttp.ClientSession,
+    url: str,
+    file_path: str,
+    total_timeout: int = 300,
+) -> bool:
+    """Stream bytes from a SaaS-proxy URL to `file_path`. Returns True on success.
+
+    On non-2xx the response body is logged (truncated) so the caller can tell
+    a rate-limit (429) apart from a genuine miss (404).
+    """
+    headers = {"X-API-Key": API_KEY} if API_KEY else {}
+    async with session.get(
+        url,
+        headers=headers,
+        timeout=aiohttp.ClientTimeout(total=total_timeout),
+    ) as resp:
+        if resp.status not in (200, 206):
+            body = (await resp.text())[:300]
+            logger.error(f"SaaS proxy {url} status {resp.status}: {body}")
+            return False
+        with open(file_path, "wb") as f:
+            async for chunk in resp.content.iter_chunked(131072):
+                f.write(chunk)
+    return os.path.exists(file_path) and os.path.getsize(file_path) > 0
+
+
 async def download_song_remote(video_id: str) -> str | None:
     """Download the audio track via the SaaS YouTube API.
 
-    Calls GET /api/youtube/audio?id=<vid>, picks itag 140 (or the best audio
-    fallback), then streams the signed googlevideo URL to disk. The signed
-    URL follows a 302 to a googlevideo edge — aiohttp handles that.
+    Primary: GET /api/youtube/play/audio — the API re-fetches googlevideo bytes
+    server-side and streams them back as audio/mpeg. This bypasses the
+    ip=<api-egress> lock on signed googlevideo URLs (the bot container has a
+    different egress and would otherwise get 403).
+    Fallback: GET /api/youtube/audio — pick itag 140 and fetch the signed URL
+    directly (only works if the bot happens to share an egress-ASN the URL
+    tolerates; kept for self-hosted deployments where that's true).
     """
     if not API_KEY:
         return None
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     # Keep the .mp3 filename convention the rest of the codebase expects; the
-    # bytes may actually be m4a/webm/opus but ffmpeg reads by container magic
-    # so pytgcalls plays them regardless of extension.
+    # proxy already delivers audio/mpeg, and ffmpeg reads by container magic
+    # regardless.
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
     try:
-        headers = {"X-API-Key": API_KEY}
         async with aiohttp.ClientSession() as session:
+            # Tier 1: byte-proxy.
+            if await _download_from_proxy(
+                session,
+                f"{API_URL}/api/youtube/play/audio?id={video_id}",
+                file_path,
+                total_timeout=300,
+            ):
+                logger.info(f"SaaS proxy /api/youtube/play/audio download successful: {file_path}")
+                return file_path
+            # Wipe any partial write before falling back.
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+
+            # Tier 2: JSON + signed URL (IP-locked; may 403 from a different egress).
+            headers = {"X-API-Key": API_KEY}
             async with session.get(
                 f"{API_URL}/api/youtube/audio",
                 params={"id": video_id},
@@ -230,7 +278,7 @@ async def download_song_remote(video_id: str) -> str | None:
                 headers={"Range": "bytes=0-"},
             ) as dl_resp:
                 if dl_resp.status not in (200, 206):
-                    logger.error(f"Audio download failed: {dl_resp.status}")
+                    logger.error(f"Signed googlevideo fetch failed: {dl_resp.status} (likely IP-lock)")
                     return None
                 with open(file_path, "wb") as f:
                     async for chunk in dl_resp.content.iter_chunked(131072):
@@ -238,7 +286,7 @@ async def download_song_remote(video_id: str) -> str | None:
 
         if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
             logger.info(
-                f"SaaS API audio download successful (itag={fmt.get('format_id') if fmt else '?'}): {file_path}"
+                f"SaaS API audio (signed URL) download successful (itag={fmt.get('format_id') if fmt else '?'}): {file_path}"
             )
             return file_path
         return None
@@ -253,18 +301,36 @@ async def download_song_remote(video_id: str) -> str | None:
 
 
 async def download_video_remote(video_id: str) -> str | None:
-    """Download a muxed mp4 (video+audio) via the SaaS YouTube API.
+    """Download a muxed mp4 via the SaaS YouTube API.
 
-    Uses GET /api/youtube/stream which returns a single itag=18 (360p mp4)
-    signed URL — muxed A+V, the most portable single-file option.
+    Primary: GET /api/youtube/play/video/hq (byte-proxy) with
+    /api/youtube/play/video as a secondary proxy path.
+    Fallback: GET /api/youtube/stream — signed itag=18 mp4 URL (IP-locked).
     """
     if not API_KEY:
         return None
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp4")
     try:
-        headers = {"X-API-Key": API_KEY}
         async with aiohttp.ClientSession() as session:
+            # Tier 1: byte-proxy variants (hq preferred, plain video fallback).
+            for proxy_path in ("/api/youtube/play/video/hq", "/api/youtube/play/video"):
+                if await _download_from_proxy(
+                    session,
+                    f"{API_URL}{proxy_path}?id={video_id}",
+                    file_path,
+                    total_timeout=600,
+                ):
+                    logger.info(f"SaaS proxy {proxy_path} download successful: {file_path}")
+                    return file_path
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                    except Exception:
+                        pass
+
+            # Tier 2: signed googlevideo URL (IP-locked).
+            headers = {"X-API-Key": API_KEY}
             async with session.get(
                 f"{API_URL}/api/youtube/stream",
                 params={"id": video_id},
@@ -292,14 +358,14 @@ async def download_video_remote(video_id: str) -> str | None:
                 headers={"Range": "bytes=0-"},
             ) as dl_resp:
                 if dl_resp.status not in (200, 206):
-                    logger.error(f"Video download failed: {dl_resp.status}")
+                    logger.error(f"Signed googlevideo video fetch failed: {dl_resp.status} (likely IP-lock)")
                     return None
                 with open(file_path, "wb") as f:
                     async for chunk in dl_resp.content.iter_chunked(131072):
                         f.write(chunk)
 
         if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-            logger.info(f"SaaS API video download successful: {file_path}")
+            logger.info(f"SaaS API video (signed URL) download successful: {file_path}")
             return file_path
         return None
     except Exception as e:
@@ -688,9 +754,10 @@ class YouTube:
         Used for instant playback — pytgcalls/ffmpeg can stream directly from URLs.
 
         Priority:
-        1. SaaS YouTube API (most reliable when key is set):
-           - Audio: /api/youtube/play returns a single audio direct_url (itag 140).
-           - Video: /api/youtube/stream returns the itag 18 muxed mp4 URL.
+        1. SaaS YouTube API byte-proxy — return the proxy URL directly so
+           pytgcalls/ffmpeg pulls bytes THROUGH the API (audio/mpeg for audio,
+           video/mp4 for video). Bypasses YouTube's ip=<api-egress> lock on
+           signed googlevideo URLs.
         2. yt-dlp with cookies (extract_info, no download).
         3. yt-dlp without cookies (extract_info, no download).
         """
@@ -699,67 +766,52 @@ class YouTube:
 
         url = f"https://www.youtube.com/watch?v={video_id}"
 
-        # Step 1: SaaS API — hand back the signed googlevideo URL directly.
-        # These URLs are signed by YouTube for a specific time window; they
-        # 302 to a googlevideo edge and stream fine from any client IP
-        # (verified via HTTP 206 range fetches).
+        # Step 1: SaaS API byte-proxy. We return the proxy URL itself — the
+        # api_key goes in the query string because pytgcalls/ffmpeg can't be
+        # told to send custom headers here. A tiny range probe verifies the
+        # endpoint is up (200/206 with a media content-type) before we commit
+        # to it; on 4xx/5xx we fall through to yt-dlp instead of handing
+        # ffmpeg a URL that will fail mid-stream.
         if API_KEY:
             try:
-                headers = {"X-API-Key": API_KEY}
-                if video:
-                    endpoint = f"{API_URL}/api/youtube/stream"
-                    logger.info(f"[Stream Step 1] Trying SaaS API /api/youtube/stream: {video_id}")
-                else:
-                    endpoint = f"{API_URL}/api/youtube/play"
-                    logger.info(f"[Stream Step 1] Trying SaaS API /api/youtube/play: {video_id}")
-
+                proxy_paths = (
+                    ("/api/youtube/play/video/hq", "/api/youtube/play/video")
+                    if video
+                    else ("/api/youtube/play/audio",)
+                )
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        endpoint,
-                        params={"id": video_id},
-                        headers=headers,
-                        timeout=aiohttp.ClientTimeout(total=20),
-                    ) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            if data.get("success"):
-                                if video:
-                                    stream_url = (data.get("stream") or {}).get("url")
-                                else:
-                                    stream_url = data.get("direct_url")
-                                if stream_url:
-                                    logger.info(f"[Stream] Got stream URL via SaaS API for {video_id}")
-                                    return stream_url
-                            logger.error(f"[Stream Step 1] SaaS API returned no url: {str(data)[:300]}")
-                        else:
-                            body = (await resp.text())[:500]
-                            logger.error(
-                                f"[Stream Step 1] SaaS API status {resp.status}: {body}"
-                            )
-
-                # Audio fallback within the SaaS API: /api/youtube/audio has
-                # per-format URLs, use itag 140 explicitly.
-                if not video:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(
-                            f"{API_URL}/api/youtube/audio",
-                            params={"id": video_id},
-                            headers=headers,
-                            timeout=aiohttp.ClientTimeout(total=20),
-                        ) as resp:
-                            if resp.status == 200:
-                                data = await resp.json()
-                                if data.get("success"):
-                                    fmt = _pick_audio_stream(
-                                        (data.get("audio") or {}).get("audio_streams") or []
-                                    )
-                                    if fmt and fmt.get("url"):
+                    for path in proxy_paths:
+                        proxy_url = (
+                            f"{API_URL}{path}?id={video_id}&api_key={API_KEY}"
+                        )
+                        logger.info(
+                            f"[Stream Step 1] Probing SaaS proxy {path}: {video_id}"
+                        )
+                        try:
+                            async with session.get(
+                                proxy_url,
+                                headers={"Range": "bytes=0-1023"},
+                                timeout=aiohttp.ClientTimeout(total=20),
+                            ) as resp:
+                                if resp.status in (200, 206):
+                                    ctype = resp.headers.get("Content-Type", "")
+                                    if ctype.startswith(("audio/", "video/")):
                                         logger.info(
-                                            f"[Stream] Got audio URL via /api/youtube/audio itag={fmt.get('format_id')} for {video_id}"
+                                            f"[Stream] Got proxy stream URL {path} ({ctype}) for {video_id}"
                                         )
-                                        return fmt["url"]
+                                        return proxy_url
+                                    logger.error(
+                                        f"[Stream Step 1] {path} ok but wrong Content-Type: {ctype}"
+                                    )
+                                else:
+                                    body = (await resp.text())[:300]
+                                    logger.error(
+                                        f"[Stream Step 1] {path} status {resp.status}: {body}"
+                                    )
+                        except Exception as e:
+                            logger.error(f"[Stream Step 1] {path} probe failed: {e}")
             except Exception as e:
-                logger.error(f"[Stream Step 1] SaaS API failed: {e}")
+                logger.error(f"[Stream Step 1] SaaS proxy failed: {e}")
 
         # Step 2: yt-dlp with cookies — just extract URL, no download
         cookie_file = self.get_cookies()
