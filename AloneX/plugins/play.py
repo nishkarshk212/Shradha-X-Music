@@ -83,13 +83,31 @@ async def _play_track(
             return
 
     if not file.file_path:
-        fname = f"downloads/{file.id}.{'mp4' if video else 'webm'}"
-        if Path(fname).exists():
-            file.file_path = fname
+        # Look for any already-downloaded file for this id. Extensions vary by
+        # source — the SaaS API writes .mp3 for audio and .mp4 for video; older
+        # yt-dlp-era files may still be .webm/.m4a/.opus/.ogg. We accept any
+        # non-empty match so a repeat play of the same track reuses the local
+        # file instead of re-hitting the API.
+        cached = None
+        exts = ("mp4", "webm") if video else ("mp3", "m4a", "webm", "opus", "ogg")
+        for ext in exts:
+            cand = f"downloads/{file.id}.{ext}"
+            p = Path(cand)
+            if p.exists() and p.stat().st_size > 0:
+                cached = cand
+                break
+        if cached:
+            file.file_path = cached
         else:
             from AloneX.plugins.settings import get_chat_settings
             settings = await get_chat_settings(chat_id)
 
+            # Quick Play (default ON): return the SaaS API byte-proxy URL and
+            # let pytgcalls/ffmpeg stream bytes THROUGH the API in real time.
+            # No local download for the first song — playback starts within
+            # ~1s. Queued songs are already being fetched in the background
+            # (see bg_download_task above), so subsequent tracks either play
+            # from their cached file or fall back to the same live-stream path.
             await sent.edit_text(msg.lang["play_downloading"])
             stream_url = None
             if settings.get("quickplay", True):

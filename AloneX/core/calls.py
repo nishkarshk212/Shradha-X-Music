@@ -17,7 +17,16 @@ from AloneX import app, config, db, lang, logger, queue, userbot, yt
 from AloneX.helpers import Media, Track, buttons, thumb
 
 
-async def delete_file(file_path: str, chat_id: int):
+async def delete_file(file_path: str, chat_id: int, video_id: str | None = None) -> None:
+    """Remove downloaded media for a finished track (honours per-chat cleanup).
+
+    ``file_path`` may be a local ``downloads/...`` path, an ``https://`` stream
+    URL, or ``None``. When ``video_id`` is provided we ALSO sweep any
+    ``downloads/{video_id}.*`` files a background prefetch may have written
+    even if the track itself played from a live stream URL — otherwise
+    completed background downloads would leak to disk indefinitely for every
+    stream-played song.
+    """
     try:
         from AloneX.plugins.settings import get_chat_settings
         settings = await get_chat_settings(chat_id)
@@ -25,9 +34,23 @@ async def delete_file(file_path: str, chat_id: int):
             return
     except Exception:
         pass
+    # 1. Delete the exact path if it points at a local file.
     if file_path and os.path.exists(file_path) and "downloads" in file_path:
         try:
             os.remove(file_path)
+        except Exception:
+            pass
+    # 2. Sweep any leftover downloads/{video_id}.* files (bg-fetch may have
+    #    completed after we started playing via a stream URL, or the file may
+    #    have a different extension than we assumed).
+    if video_id and os.path.isdir("downloads"):
+        try:
+            for name in os.listdir("downloads"):
+                if name.startswith(f"{video_id}."):
+                    try:
+                        os.remove(os.path.join("downloads", name))
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -97,7 +120,7 @@ class TgCall(PyTgCalls):
         client = await db.get_assistant(chat_id)
         try:
             for item in queue.get_queue(chat_id):
-                await delete_file(item.file_path, chat_id)
+                await delete_file(item.file_path, chat_id, video_id=item.id)
             queue.clear(chat_id)
             await db.remove_call(chat_id)
         except:
@@ -258,10 +281,16 @@ class TgCall(PyTgCalls):
 
 
     async def play_next(self, chat_id: int) -> None:
-        # Delete previous song file immediately after it ends
+        # Delete previous song file immediately after it ends. Pass the video
+        # id so we also mop up any bg-fetched downloads/{id}.* files that
+        # completed while the track was actually streaming from a URL.
         current_media = queue.get_current(chat_id)
-        if current_media and current_media.file_path:
-            await delete_file(current_media.file_path, chat_id)
+        if current_media:
+            await delete_file(
+                current_media.file_path,
+                chat_id,
+                video_id=current_media.id,
+            )
 
         media = queue.get_next(chat_id)
         # A real (user-requested or queued) track is available — clear any
