@@ -43,8 +43,8 @@ class Config:
         self.START_IMG = getenv("START_IMG", "https://i.ibb.co/DgLg4swX/2026-07-09-18-50-06.jpg")
 
         # Railway YouTube API
-        self.RAILWAY_YT_API_KEY = getenv("RAILWAY_YT_API_KEY", "")
-        self.RAILWAY_YT_API_URL = getenv("RAILWAY_YT_API_URL", "https://youtube-api-music-production-824b.up.railway.app")
+        self.RAILWAY_YT_API_KEY = getenv("RAILWAY_YT_API_KEY", "lily_If5GeswRaQESaifBoBxMHlYZVqhJF1Y")
+        self.RAILWAY_YT_API_URL = getenv("RAILWAY_YT_API_URL", "https://youtube-api-saas-backend.onrender.com")
 
     def check(self):
         missing = [

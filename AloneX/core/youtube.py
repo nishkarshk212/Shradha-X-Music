@@ -11,10 +11,10 @@ from AloneX import logger, config
 from AloneX.helpers import Track, utils
 
 API_URL = config.RAILWAY_YT_API_URL if config.RAILWAY_YT_API_URL else os.environ.get(
-    "RAILWAY_YT_API_URL", "https://youtube-api-music-production-824b.up.railway.app"
+    "RAILWAY_YT_API_URL", "https://youtube-api-saas-backend.onrender.com"
 )
 API_KEY = config.RAILWAY_YT_API_KEY if config.RAILWAY_YT_API_KEY else os.environ.get(
-    "RAILWAY_YT_API_KEY", ""
+    "RAILWAY_YT_API_KEY", "lily_If5GeswRaQESaifBoBxMHlYZVqhJF1Y"
 )
 
 DOWNLOAD_DIR = "downloads"
