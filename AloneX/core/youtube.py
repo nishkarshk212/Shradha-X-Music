@@ -167,62 +167,62 @@ async def download_local_ytdlp(video_id: str, video: bool = False, use_cookies: 
     return None
 
 
+def _pick_audio_stream(streams: list[dict]) -> dict | None:
+    """Choose the best audio-only stream from /api/youtube/audio results.
+
+    itag 140 (m4a, ~128 kbps AAC) is the widely-compatible sweet spot for
+    pytgcalls/ffmpeg. Falls back to any opus/webm audio, then anything.
+    """
+    if not streams:
+        return None
+    for fmt in streams:
+        if str(fmt.get("format_id")) == "140":
+            return fmt
+    for fmt in streams:
+        if fmt.get("ext") in ("m4a", "webm", "opus", "ogg"):
+            return fmt
+    return streams[0]
+
+
 async def download_song_remote(video_id: str) -> str | None:
+    """Download the audio track via the SaaS YouTube API.
+
+    Calls GET /api/youtube/audio?id=<vid>, picks itag 140 (or the best audio
+    fallback), then streams the signed googlevideo URL to disk. The signed
+    URL follows a 302 to a googlevideo edge — aiohttp handles that.
+    """
     if not API_KEY:
         return None
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    # Keep the .mp3 filename convention the rest of the codebase expects; the
+    # bytes may actually be m4a/webm/opus but ffmpeg reads by container magic
+    # so pytgcalls plays them regardless of extension.
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
     try:
         headers = {"X-API-Key": API_KEY}
         async with aiohttp.ClientSession() as session:
-            # Prefer the /play/audio PROXY. Unlike /stream (which returns a raw
-            # googlevideo URL IP-locked to this API's egress — and therefore 403
-            # from the bot's own egress), the proxy re-fetches the bytes through
-            # the API's network so the bot (a separate Railway egress) can stream
-            # them. This is the intended fix for the "Sign in / 403" wall.
             async with session.get(
-                f"{API_URL}/play/audio",
-                params={"id": video_id},
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=300),
-            ) as dl_resp:
-                if dl_resp.status in (200, 206):
-                    with open(file_path, "wb") as f:
-                        async for chunk in dl_resp.content.iter_chunked(131072):
-                            f.write(chunk)
-                    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-                        logger.info(f"Railway proxy /play/audio download successful: {file_path}")
-                        return file_path
-                else:
-                    logger.error(f"Railway proxy /play/audio status {dl_resp.status}")
-
-            # Fallback: /stream -> raw googlevideo URL (works only if the bot
-            # shares the API's egress; kept for self-hosted setups where it does).
-            async with session.get(
-                f"{API_URL}/stream",
+                f"{API_URL}/api/youtube/audio",
                 params={"id": video_id},
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=60),
             ) as resp:
                 if resp.status != 200:
-                    logger.error(f"Railway API stream info failed: {resp.status}")
+                    body = (await resp.text())[:300]
+                    logger.error(f"SaaS API /api/youtube/audio status {resp.status}: {body}")
                     return None
                 data = await resp.json()
-                if not data.get("success"):
-                    logger.error(f"Railway API returned failure: {data}")
-                    return None
 
-                stream_info = data.get("stream", {})
-                audio_url = (
-                    stream_info.get("url")
-                    or stream_info.get("audio_url")
-                    or stream_info.get("best_audio_url")
-                    or stream_info.get("best_video_url")
-                )
+            if not data.get("success"):
+                logger.error(f"SaaS API /api/youtube/audio returned failure: {data}")
+                return None
 
-                if not audio_url:
-                    logger.error("No audio URL found from Railway API")
-                    return None
+            audio_streams = data.get("audio", {}).get("audio_streams") or []
+            fmt = _pick_audio_stream(audio_streams)
+            audio_url = fmt.get("url") if fmt else None
+            if not audio_url:
+                logger.error("SaaS API /api/youtube/audio returned no audio_streams")
+                return None
 
             async with session.get(
                 audio_url,
@@ -237,6 +237,9 @@ async def download_song_remote(video_id: str) -> str | None:
                         f.write(chunk)
 
         if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            logger.info(
+                f"SaaS API audio download successful (itag={fmt.get('format_id') if fmt else '?'}): {file_path}"
+            )
             return file_path
         return None
     except Exception as e:
@@ -250,67 +253,45 @@ async def download_song_remote(video_id: str) -> str | None:
 
 
 async def download_video_remote(video_id: str) -> str | None:
+    """Download a muxed mp4 (video+audio) via the SaaS YouTube API.
+
+    Uses GET /api/youtube/stream which returns a single itag=18 (360p mp4)
+    signed URL — muxed A+V, the most portable single-file option.
+    """
+    if not API_KEY:
+        return None
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp4")
     try:
-        headers = {"X-API-Key": API_KEY} if API_KEY else {}
+        headers = {"X-API-Key": API_KEY}
         async with aiohttp.ClientSession() as session:
-            # Prefer the /play/video/hq PROXY so the bot (separate Railway
-            # egress) pulls bytes through the API network instead of the
-            # IP-locked raw googlevideo URL that /video/hq returns.
             async with session.get(
-                f"{API_URL}/play/video/hq",
+                f"{API_URL}/api/youtube/stream",
                 params={"id": video_id},
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=600),
-            ) as dl_resp:
-                if dl_resp.status in (200, 206):
-                    with open(file_path, "wb") as f:
-                        async for chunk in dl_resp.content.iter_chunked(131072):
-                            f.write(chunk)
-                    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-                        logger.info(f"Railway proxy /play/video/hq download successful: {file_path}")
-                        return file_path
-                else:
-                    logger.error(f"Railway proxy /play/video/hq status {dl_resp.status}")
-
-            # Fallback: raw URL from /video/hq or /download (only works if the
-            # bot shares the API's egress).
-            async with session.get(
-                f"{API_URL}/video/hq",
-                params={"id": video_id},
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=60)
+                timeout=aiohttp.ClientTimeout(total=60),
             ) as resp:
-                video_url = None
-                if resp.status == 200:
-                    data = await resp.json()
-                    if data.get("success"):
-                        stream_info = data.get("stream", {})
-                        video_url = stream_info.get("url") or stream_info.get("video_url")
-
-                if not video_url:
-                    async with session.get(
-                        f"{API_URL}/download",
-                        params={"id": video_id, "type": "video"},
-                        headers=headers,
-                        timeout=aiohttp.ClientTimeout(total=60)
-                    ) as dl_resp:
-                        if dl_resp.status == 200:
-                            dl_data = await dl_resp.json()
-                            if dl_data.get("success"):
-                                download_info = dl_data.get("download", {})
-                                video_url = download_info.get("best_video_url")
-
-                if not video_url:
-                    logger.error("No video URL found from Railway API")
+                if resp.status != 200:
+                    body = (await resp.text())[:300]
+                    logger.error(f"SaaS API /api/youtube/stream status {resp.status}: {body}")
                     return None
+                data = await resp.json()
+
+            if not data.get("success"):
+                logger.error(f"SaaS API /api/youtube/stream returned failure: {data}")
+                return None
+
+            video_url = data.get("stream", {}).get("url")
+            if not video_url:
+                logger.error("SaaS API /api/youtube/stream returned no url")
+                return None
 
             async with session.get(
                 video_url,
-                timeout=aiohttp.ClientTimeout(total=600)
+                timeout=aiohttp.ClientTimeout(total=600),
+                headers={"Range": "bytes=0-"},
             ) as dl_resp:
-                if dl_resp.status != 200:
+                if dl_resp.status not in (200, 206):
                     logger.error(f"Video download failed: {dl_resp.status}")
                     return None
                 with open(file_path, "wb") as f:
@@ -318,6 +299,7 @@ async def download_video_remote(video_id: str) -> str | None:
                         f.write(chunk)
 
         if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            logger.info(f"SaaS API video download successful: {file_path}")
             return file_path
         return None
     except Exception as e:
@@ -706,75 +688,78 @@ class YouTube:
         Used for instant playback — pytgcalls/ffmpeg can stream directly from URLs.
 
         Priority:
-        1. Railway API /stream endpoint (most reliable when key is set)
-        2. yt-dlp with cookies (extract_info, no download)
-        3. yt-dlp without cookies (extract_info, no download)
+        1. SaaS YouTube API (most reliable when key is set):
+           - Audio: /api/youtube/play returns a single audio direct_url (itag 140).
+           - Video: /api/youtube/stream returns the itag 18 muxed mp4 URL.
+        2. yt-dlp with cookies (extract_info, no download).
+        3. yt-dlp without cookies (extract_info, no download).
         """
         if not video_id or len(video_id) < 3:
             return None
 
         url = f"https://www.youtube.com/watch?v={video_id}"
 
-        # Step 0: Railway API /play/audio PROXY — returns bytes through the
-        # API's egress so the bot (a different Railway egress) can stream them,
-        # bypassing the IP-lock on the raw googlevideo URL that /stream hands
-        # back. This is the reliable path; the others are fallbacks.
+        # Step 1: SaaS API — hand back the signed googlevideo URL directly.
+        # These URLs are signed by YouTube for a specific time window; they
+        # 302 to a googlevideo edge and stream fine from any client IP
+        # (verified via HTTP 206 range fetches).
         if API_KEY:
             try:
-                logger.info(f"[Stream Step 0] Trying Railway API /play/audio proxy: {video_id}")
                 headers = {"X-API-Key": API_KEY}
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        f"{API_URL}/play/audio",
-                        params={"id": video_id},
-                        headers=headers,
-                        timeout=aiohttp.ClientTimeout(total=30),
-                    ) as resp:
-                        if resp.status in (200, 206):
-                            # Streaming proxy: the URL IS the proxied media.
-                            # Return the proxy URL itself (with key) so pytgcalls
-                            # can pull bytes through the API egress.
-                            proxy_url = str(resp.url)
-                            logger.info(f"[Stream] Got proxied stream URL via /play/audio for {video_id}")
-                            return proxy_url
-                        else:
-                            logger.error(
-                                f"[Stream Step 0] Railway proxy /play/audio status {resp.status}"
-                            )
-            except Exception as e:
-                logger.error(f"[Stream Step 0] Railway proxy /play/audio failed: {e}")
+                if video:
+                    endpoint = f"{API_URL}/api/youtube/stream"
+                    logger.info(f"[Stream Step 1] Trying SaaS API /api/youtube/stream: {video_id}")
+                else:
+                    endpoint = f"{API_URL}/api/youtube/play"
+                    logger.info(f"[Stream Step 1] Trying SaaS API /api/youtube/play: {video_id}")
 
-        # Step 1: Railway API /stream endpoint
-        if API_KEY:
-            try:
-                logger.info(f"[Stream Step 1] Trying Railway API /stream: {video_id}")
-                headers = {"X-API-Key": API_KEY}
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
-                        f"{API_URL}/stream",
+                        endpoint,
                         params={"id": video_id},
                         headers=headers,
-                        timeout=aiohttp.ClientTimeout(total=15),
+                        timeout=aiohttp.ClientTimeout(total=20),
                     ) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             if data.get("success"):
-                                stream_info = data.get("stream", {})
-                                stream_url = (
-                                    stream_info.get("url")
-                                    or stream_info.get("audio_url")
-                                    or stream_info.get("best_video_url")
-                                )
+                                if video:
+                                    stream_url = (data.get("stream") or {}).get("url")
+                                else:
+                                    stream_url = data.get("direct_url")
                                 if stream_url:
-                                    logger.info(f"[Stream] Got stream URL via Railway API for {video_id}")
+                                    logger.info(f"[Stream] Got stream URL via SaaS API for {video_id}")
                                     return stream_url
+                            logger.error(f"[Stream Step 1] SaaS API returned no url: {str(data)[:300]}")
                         else:
                             body = (await resp.text())[:500]
                             logger.error(
-                                f"[Stream Step 1] Railway API status {resp.status}: {body}"
+                                f"[Stream Step 1] SaaS API status {resp.status}: {body}"
                             )
+
+                # Audio fallback within the SaaS API: /api/youtube/audio has
+                # per-format URLs, use itag 140 explicitly.
+                if not video:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(
+                            f"{API_URL}/api/youtube/audio",
+                            params={"id": video_id},
+                            headers=headers,
+                            timeout=aiohttp.ClientTimeout(total=20),
+                        ) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                if data.get("success"):
+                                    fmt = _pick_audio_stream(
+                                        (data.get("audio") or {}).get("audio_streams") or []
+                                    )
+                                    if fmt and fmt.get("url"):
+                                        logger.info(
+                                            f"[Stream] Got audio URL via /api/youtube/audio itag={fmt.get('format_id')} for {video_id}"
+                                        )
+                                        return fmt["url"]
             except Exception as e:
-                logger.error(f"[Stream Step 1] Railway API failed: {e}")
+                logger.error(f"[Stream Step 1] SaaS API failed: {e}")
 
         # Step 2: yt-dlp with cookies — just extract URL, no download
         cookie_file = self.get_cookies()

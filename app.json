@@ -57,7 +57,7 @@
         },
         "RAILWAY_YT_API_URL": {
             "description": "Railway YouTube API URL",
-            "value": "https://youtube-api-music-production-77fb.up.railway.app",
+            "value": "https://youtube-api-saas-backend.onrender.com",
             "required": false
         },
         "COOKIES_DATA": {
