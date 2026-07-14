@@ -810,23 +810,21 @@ class YouTube:
     async def _keepalive_ping(self) -> None:
         """Send one lightweight ping to the SaaS API so its Onrender container
         stays warm. Onrender free tier spins the dyno down after ~15 min idle
-        and the next request cold-starts (+5–10 s). We hit /api/youtube/details
-        for a well-known short video id which returns cached metadata quickly
-        without triggering a full googlevideo fetch.
+        and the next request cold-starts (+5–10 s). The root path is a static
+        200 that doesn't trigger any googlevideo work — exactly what we want.
         """
-        if not API_KEY or not API_URL:
+        if not API_URL:
             return
-        ping_url = (
-            f"{API_URL}/api/youtube/details?id=dQw4w9WgXcQ&api_key={API_KEY}"
-        )
+        ping_url = f"{API_URL}/"
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     ping_url,
                     timeout=aiohttp.ClientTimeout(total=30),
                 ) as resp:
-                    if resp.status == 200:
-                        logger.info("[Keepalive] SaaS API warm.")
+                    # Any non-5xx response means the container is up.
+                    if resp.status < 500:
+                        logger.info(f"[Keepalive] SaaS API warm (status {resp.status}).")
                     else:
                         logger.warning(
                             f"[Keepalive] SaaS API returned status {resp.status}"
