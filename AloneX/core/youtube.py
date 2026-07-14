@@ -379,63 +379,52 @@ async def download_video_remote(video_id: str) -> str | None:
 
 
 async def download_song(link: str) -> str:
+    # API-only mode: the bot NEVER falls back to local yt-dlp. Every download
+    # goes through the SaaS API (RAILWAY_YT_API_KEY / RAILWAY_YT_API_URL) so
+    # anti-bot / cookie / IP-lock problems are centralised on the API side and
+    # the bot's VPS IP is never exposed to YouTube. If the API can't deliver
+    # the track, we fail cleanly rather than tripping YouTube's bot-check from
+    # the bot's own egress.
     video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
     if not video_id or len(video_id) < 3:
         return None
 
-    # Step 1: Railway API (most reliable when RAILWAY_YT_API_KEY is set)
-    if API_KEY:
-        logger.info(f"[Step 1] Attempting Railway API download: {video_id}")
-        file_path = await download_song_remote(video_id)
-        if file_path:
-            logger.info(f"Railway API download successful: {file_path}")
-            return file_path
+    if not API_KEY:
+        logger.error(
+            "RAILWAY_YT_API_KEY not configured; API-only download disabled."
+        )
+        return None
 
-    # Step 2: Local yt-dlp with cookies (base64 COOKIES_DATA)
-    logger.info(f"[Step 2] Railway API skipped/failed. Trying local yt-dlp WITH cookies: {video_id}")
-    file_path = await download_local_ytdlp(video_id, video=False, use_cookies=True)
+    logger.info(f"[API] Attempting SaaS API audio download: {video_id}")
+    file_path = await download_song_remote(video_id)
     if file_path:
-        logger.info(f"Local cookie download successful: {file_path}")
+        logger.info(f"SaaS API audio download successful: {file_path}")
         return file_path
 
-    # Step 3: Local yt-dlp without cookies (last resort; YouTube often bot-blocks)
-    logger.info(f"[Step 3] Cookie download failed. Trying local yt-dlp WITHOUT cookies: {video_id}")
-    file_path = await download_local_ytdlp(video_id, video=False, use_cookies=False)
-    if file_path:
-        logger.info(f"Local download without cookies successful: {file_path}")
-        return file_path
-
-    logger.error(f"All download methods failed for song: {video_id}")
+    logger.error(f"SaaS API audio download failed for song: {video_id}")
     return None
 
 
 async def download_video(link: str) -> str:
+    # API-only mode: same rationale as download_song — every fetch goes
+    # through the SaaS API. No local yt-dlp fallback.
     video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
     if not video_id or len(video_id) < 3:
         return None
 
-    # Step 1: Try local yt-dlp with cookies first
-    logger.info(f"[Step 1] Attempting local yt-dlp download WITH cookies: {video_id}")
-    file_path = await download_local_ytdlp(video_id, video=True, use_cookies=True)
-    if file_path:
-        logger.info(f"Local cookie download successful: {file_path}")
-        return file_path
+    if not API_KEY:
+        logger.error(
+            "RAILWAY_YT_API_KEY not configured; API-only download disabled."
+        )
+        return None
 
-    # Step 2: Try remote Railway API
-    logger.info(f"[Step 2] Local cookie download skipped/failed. Trying Railway API: {video_id}")
+    logger.info(f"[API] Attempting SaaS API video download: {video_id}")
     file_path = await download_video_remote(video_id)
     if file_path:
-        logger.info(f"Railway API download successful: {file_path}")
+        logger.info(f"SaaS API video download successful: {file_path}")
         return file_path
 
-    # Step 3: Try local yt-dlp without cookies
-    logger.info(f"[Step 3] Railway API download failed. Trying local yt-dlp WITHOUT cookies: {video_id}")
-    file_path = await download_local_ytdlp(video_id, video=True, use_cookies=False)
-    if file_path:
-        logger.info(f"Local download without cookies successful: {file_path}")
-        return file_path
-
-    logger.error(f"All download methods failed for video: {video_id}")
+    logger.error(f"SaaS API video download failed: {video_id}")
     return None
 
 
@@ -750,92 +739,63 @@ class YouTube:
             return await download_song(video_id)
 
     async def get_stream_url(self, video_id: str, video: bool = False) -> str | None:
-        """Quickly resolve a direct stream URL without downloading the file.
-        Used for instant playback — pytgcalls/ffmpeg can stream directly from URLs.
+        """Resolve a stream URL via the SaaS API (API-only mode).
 
-        Priority:
-        1. SaaS YouTube API byte-proxy — return the proxy URL directly so
-           pytgcalls/ffmpeg pulls bytes THROUGH the API (audio/mpeg for audio,
-           video/mp4 for video). Bypasses YouTube's ip=<api-egress> lock on
-           signed googlevideo URLs.
-        2. yt-dlp with cookies (extract_info, no download).
-        3. yt-dlp without cookies (extract_info, no download).
+        Returns the SaaS API byte-proxy URL directly so pytgcalls/ffmpeg pulls
+        bytes THROUGH the API (audio/mpeg for audio, video/mp4 for video).
+        The api_key rides in the query string because pytgcalls/ffmpeg cannot
+        be told to send custom headers here. A tiny range probe verifies the
+        endpoint is up (200/206 with a media content-type) before we hand it
+        to ffmpeg. If the API can't deliver, we return None — no local
+        yt-dlp fallback (that would expose the bot's VPS IP to YouTube and
+        trip the bot-check wall).
         """
         if not video_id or len(video_id) < 3:
             return None
 
-        url = f"https://www.youtube.com/watch?v={video_id}"
+        if not API_KEY:
+            logger.error(
+                "[Stream] RAILWAY_YT_API_KEY not configured; API-only stream disabled."
+            )
+            return None
 
-        # Step 1: SaaS API byte-proxy. We return the proxy URL itself — the
-        # api_key goes in the query string because pytgcalls/ffmpeg can't be
-        # told to send custom headers here. A tiny range probe verifies the
-        # endpoint is up (200/206 with a media content-type) before we commit
-        # to it; on 4xx/5xx we fall through to yt-dlp instead of handing
-        # ffmpeg a URL that will fail mid-stream.
-        if API_KEY:
-            try:
-                proxy_paths = (
-                    ("/api/youtube/play/video/hq", "/api/youtube/play/video")
-                    if video
-                    else ("/api/youtube/play/audio",)
-                )
-                async with aiohttp.ClientSession() as session:
-                    for path in proxy_paths:
-                        proxy_url = (
-                            f"{API_URL}{path}?id={video_id}&api_key={API_KEY}"
-                        )
-                        logger.info(
-                            f"[Stream Step 1] Probing SaaS proxy {path}: {video_id}"
-                        )
-                        try:
-                            async with session.get(
-                                proxy_url,
-                                headers={"Range": "bytes=0-1023"},
-                                timeout=aiohttp.ClientTimeout(total=20),
-                            ) as resp:
-                                if resp.status in (200, 206):
-                                    ctype = resp.headers.get("Content-Type", "")
-                                    if ctype.startswith(("audio/", "video/")):
-                                        logger.info(
-                                            f"[Stream] Got proxy stream URL {path} ({ctype}) for {video_id}"
-                                        )
-                                        return proxy_url
-                                    logger.error(
-                                        f"[Stream Step 1] {path} ok but wrong Content-Type: {ctype}"
-                                    )
-                                else:
-                                    body = (await resp.text())[:300]
-                                    logger.error(
-                                        f"[Stream Step 1] {path} status {resp.status}: {body}"
-                                    )
-                        except Exception as e:
-                            logger.error(f"[Stream Step 1] {path} probe failed: {e}")
-            except Exception as e:
-                logger.error(f"[Stream Step 1] SaaS proxy failed: {e}")
-
-        # Step 2: yt-dlp with cookies — just extract URL, no download
-        cookie_file = self.get_cookies()
-        if cookie_file:
-            try:
-                logger.info(f"[Stream Step 2] Resolving stream URL with cookies: {video_id}")
-                stream_url = await self._extract_stream_url(url, video, cookie_file)
-                if stream_url:
-                    logger.info(f"[Stream] Got stream URL via cookies for {video_id}")
-                    return stream_url
-            except Exception as e:
-                logger.error(f"[Stream Step 2] Cookie extract failed: {e}")
-
-        # Step 3: yt-dlp without cookies — just extract URL
+        proxy_paths = (
+            ("/api/youtube/play/video/hq", "/api/youtube/play/video")
+            if video
+            else ("/api/youtube/play/audio",)
+        )
         try:
-            logger.info(f"[Stream Step 3] Resolving stream URL without cookies: {video_id}")
-            stream_url = await self._extract_stream_url(url, video, None)
-            if stream_url:
-                logger.info(f"[Stream] Got stream URL without cookies for {video_id}")
-                return stream_url
+            async with aiohttp.ClientSession() as session:
+                for path in proxy_paths:
+                    proxy_url = f"{API_URL}{path}?id={video_id}&api_key={API_KEY}"
+                    logger.info(f"[Stream API] Probing SaaS proxy {path}: {video_id}")
+                    try:
+                        async with session.get(
+                            proxy_url,
+                            headers={"Range": "bytes=0-1023"},
+                            timeout=aiohttp.ClientTimeout(total=20),
+                        ) as resp:
+                            if resp.status in (200, 206):
+                                ctype = resp.headers.get("Content-Type", "")
+                                if ctype.startswith(("audio/", "video/")):
+                                    logger.info(
+                                        f"[Stream API] Got proxy stream URL {path} ({ctype}) for {video_id}"
+                                    )
+                                    return proxy_url
+                                logger.error(
+                                    f"[Stream API] {path} ok but wrong Content-Type: {ctype}"
+                                )
+                            else:
+                                body = (await resp.text())[:300]
+                                logger.error(
+                                    f"[Stream API] {path} status {resp.status}: {body}"
+                                )
+                    except Exception as e:
+                        logger.error(f"[Stream API] {path} probe failed: {e}")
         except Exception as e:
-            logger.error(f"[Stream Step 3] No-cookie extract failed: {e}")
+            logger.error(f"[Stream API] SaaS proxy session failed: {e}")
 
-        logger.error(f"[Stream] All stream URL methods failed for {video_id}")
+        logger.error(f"[Stream API] SaaS API stream failed for {video_id}")
         return None
 
     async def _extract_stream_url(self, url: str, video: bool, cookie_file: str | None) -> str | None:

@@ -10,3 +10,5 @@ __pycache__/
 anony/cookies/*.txt
 *.session
 *.session-journal
+# Local VPS deploy helpers (contain SSH credentials — never commit)
+.deploy/
