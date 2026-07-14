@@ -772,16 +772,21 @@ class YouTube:
                 return await download_song(video_id)
 
     async def get_stream_url(self, video_id: str, video: bool = False) -> str | None:
-        """Resolve a stream URL via the SaaS API (API-only mode).
+        """Resolve a stream URL via the SaaS API (API-only, fast path).
 
-        Returns the SaaS API byte-proxy URL directly so pytgcalls/ffmpeg pulls
-        bytes THROUGH the API (audio/mpeg for audio, video/mp4 for video).
-        The api_key rides in the query string because pytgcalls/ffmpeg cannot
-        be told to send custom headers here. A tiny range probe verifies the
-        endpoint is up (200/206 with a media content-type) before we hand it
-        to ffmpeg. If the API can't deliver, we return None — no local
-        yt-dlp fallback (that would expose the bot's VPS IP to YouTube and
-        trip the bot-check wall).
+        We return the SaaS byte-proxy URL immediately without probing. A HEAD /
+        Range=0-1023 GET probe previously ran here to validate the endpoint
+        before handing to ffmpeg, but the probe itself was the latency bottleneck
+        (~15–20 s on Onrender per fresh video id) — exactly the same processing
+        the API would do anyway when ffmpeg later opens the URL. Skipping the
+        probe moves that wait from a bot-blocking phase to ffmpeg's opportunistic
+        buffering phase, so the Telegram "now playing" message and pytgcalls
+        setup complete in <1 s.
+
+        The api_key rides in the query string because pytgcalls/ffmpeg cannot be
+        told to send custom headers here. If the API is misconfigured or the
+        video is unavailable, pytgcalls fails at open time and the caller can
+        retry via yt.download() next time.
         """
         if not video_id or len(video_id) < 3:
             return None
@@ -792,49 +797,53 @@ class YouTube:
             )
             return None
 
-        proxy_paths = (
-            ("/api/youtube/play/video/hq", "/api/youtube/play/video")
+        # High-quality video first, then regular; audio is single-endpoint.
+        path = (
+            "/api/youtube/play/video/hq"
             if video
-            else ("/api/youtube/play/audio",)
+            else "/api/youtube/play/audio"
+        )
+        proxy_url = f"{API_URL}{path}?id={video_id}&api_key={API_KEY}"
+        logger.info(f"[Stream API] Fast-path proxy URL {path} for {video_id}")
+        return proxy_url
+
+    async def _keepalive_ping(self) -> None:
+        """Send one lightweight ping to the SaaS API so its Onrender container
+        stays warm. Onrender free tier spins the dyno down after ~15 min idle
+        and the next request cold-starts (+5–10 s). We hit /api/youtube/details
+        for a well-known short video id which returns cached metadata quickly
+        without triggering a full googlevideo fetch.
+        """
+        if not API_KEY or not API_URL:
+            return
+        ping_url = (
+            f"{API_URL}/api/youtube/details?id=dQw4w9WgXcQ&api_key={API_KEY}"
         )
         try:
             async with aiohttp.ClientSession() as session:
-                for path in proxy_paths:
-                    proxy_url = f"{API_URL}{path}?id={video_id}&api_key={API_KEY}"
-                    logger.info(f"[Stream API] Probing SaaS proxy {path}: {video_id}")
-                    try:
-                        async with session.get(
-                            proxy_url,
-                            headers={"Range": "bytes=0-1023"},
-                            timeout=aiohttp.ClientTimeout(total=45),
-                        ) as resp:
-                            if resp.status in (200, 206):
-                                ctype = resp.headers.get("Content-Type", "")
-                                if ctype.startswith(("audio/", "video/")):
-                                    logger.info(
-                                        f"[Stream API] Got proxy stream URL {path} ({ctype}) for {video_id}"
-                                    )
-                                    return proxy_url
-                                logger.error(
-                                    f"[Stream API] {path} ok but wrong Content-Type: {ctype}"
-                                )
-                            else:
-                                body = (await resp.text())[:300]
-                                logger.error(
-                                    f"[Stream API] {path} status {resp.status}: {body}"
-                                )
-                    except Exception as e:
-                        # Include the exception type — asyncio.TimeoutError
-                        # str() is empty, so the bare message was useless
-                        # for telling timeouts apart from real errors.
-                        logger.error(
-                            f"[Stream API] {path} probe failed: {type(e).__name__}: {e}"
+                async with session.get(
+                    ping_url,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    if resp.status == 200:
+                        logger.info("[Keepalive] SaaS API warm.")
+                    else:
+                        logger.warning(
+                            f"[Keepalive] SaaS API returned status {resp.status}"
                         )
         except Exception as e:
-            logger.error(f"[Stream API] SaaS proxy session failed: {e}")
+            logger.warning(
+                f"[Keepalive] SaaS API ping failed: {type(e).__name__}: {e}"
+            )
 
-        logger.error(f"[Stream API] SaaS API stream failed for {video_id}")
-        return None
+    async def start_keepalive(self, interval: int = 240) -> None:
+        """Background loop: fire an immediate warmup, then ping every `interval`
+        seconds (default 4 min, well under Onrender's ~15 min spin-down).
+        Never raises — all errors are swallowed inside _keepalive_ping.
+        """
+        while True:
+            await self._keepalive_ping()
+            await asyncio.sleep(interval)
 
     async def _extract_stream_url(self, url: str, video: bool, cookie_file: str | None) -> str | None:
         """Use yt-dlp extract_info (no download) to get the direct media URL."""

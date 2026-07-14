@@ -32,6 +32,11 @@ async def main():
     app.bl_users.update(await db.get_blacklisted())
     logger.info(f"Loaded {len(app.sudoers)} sudo users.")
 
+    # Keep the SaaS YouTube API's Onrender container warm so the first-song
+    # stream URL and every subsequent request finds a hot API. Onrender free
+    # tier spins the dyno down after ~15 min idle; this loops every 4 min.
+    asyncio.create_task(yt.start_keepalive())
+
     await idle()
     await stop()
 
