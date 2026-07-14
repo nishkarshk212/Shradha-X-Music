@@ -31,6 +31,23 @@ VIDEO_FORMAT = "best[height<=720][acodec!=none]/best[acodec!=none]/best"
 # Extensions yt-dlp/ffmpeg may produce for media downloads.
 MEDIA_EXTS = {".mp3", ".m4a", ".webm", ".mp4", ".ogg", ".opus", ".aac", ".flac"}
 
+# Per-video-id asyncio locks. Multiple concurrent callers of YouTube.download()
+# for the same video (e.g. a background prefetch scheduled at queue.add() time
+# racing with a direct yt.download() from _play_track / play_next) all wait on
+# the same lock. The first caller downloads; subsequent waiters see the file
+# on disk after acquiring the lock and return the cached path without hitting
+# the SaaS API again. We never delete entries from this dict — each lock is
+# ~50 bytes, and the number of unique ids over the bot's lifetime is bounded.
+_download_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_download_lock(key: str) -> asyncio.Lock:
+    lock = _download_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _download_locks[key] = lock
+    return lock
+
 # yt-dlp 2026.x solved YouTube's n-signature challenge with a JS runtime.
 # Default/deno is unreliable in containers and silently falls back to a broken
 # runtime, producing "Sign in to confirm you're a bot". We require Node (>= 23.5
@@ -733,10 +750,26 @@ class YouTube:
         if not video_id or len(video_id) < 3:
             return None
 
-        if video:
-            return await download_video(video_id)
-        else:
-            return await download_song(video_id)
+        # Coalesce concurrent downloads of the same track under a per-id
+        # lock. Prevents the SaaS API from being hit twice when a background
+        # prefetch (scheduled at queue.add() time) races with a direct
+        # yt.download() call from _play_track or play_next.
+        key = f"{'v' if video else 'a'}:{video_id}"
+        async with _get_download_lock(key):
+            # If a peer download for the same id just finished while we were
+            # waiting for the lock, reuse the file it produced instead of
+            # re-fetching. Filenames follow the .mp3/.mp4 convention set by
+            # download_song_remote / download_video_remote.
+            ext = "mp4" if video else "mp3"
+            cached = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
+            if os.path.exists(cached) and os.path.getsize(cached) > 0:
+                logger.info(f"Download coalesced (cache hit): {cached}")
+                return cached
+
+            if video:
+                return await download_video(video_id)
+            else:
+                return await download_song(video_id)
 
     async def get_stream_url(self, video_id: str, video: bool = False) -> str | None:
         """Resolve a stream URL via the SaaS API (API-only mode).
@@ -773,7 +806,7 @@ class YouTube:
                         async with session.get(
                             proxy_url,
                             headers={"Range": "bytes=0-1023"},
-                            timeout=aiohttp.ClientTimeout(total=20),
+                            timeout=aiohttp.ClientTimeout(total=45),
                         ) as resp:
                             if resp.status in (200, 206):
                                 ctype = resp.headers.get("Content-Type", "")
@@ -791,7 +824,12 @@ class YouTube:
                                     f"[Stream API] {path} status {resp.status}: {body}"
                                 )
                     except Exception as e:
-                        logger.error(f"[Stream API] {path} probe failed: {e}")
+                        # Include the exception type — asyncio.TimeoutError
+                        # str() is empty, so the bare message was useless
+                        # for telling timeouts apart from real errors.
+                        logger.error(
+                            f"[Stream API] {path} probe failed: {type(e).__name__}: {e}"
+                        )
         except Exception as e:
             logger.error(f"[Stream API] SaaS proxy session failed: {e}")
 
