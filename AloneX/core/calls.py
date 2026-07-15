@@ -232,6 +232,38 @@ class TgCall(PyTgCalls):
             except MessageNotModified:
                 pass
             await self.play_next(chat_id)
+        except asyncio.TimeoutError:
+            # pytgcalls probes the media with ffmpeg (check_stream) before it
+            # opens the call. When we hand it a live SaaS stream URL (Quick
+            # Play fast-path) and the API is slow to send its first bytes, that
+            # probe times out and — without this handler — bubbles up as an
+            # uncaught "Unexpected exception raised in MessageHandler", killing
+            # playback entirely. Recover the same way as NoAudioSourceFound: if
+            # we were streaming a URL, download the full file and replay it from
+            # disk (slower, but reliable). Only genuinely fails if the download
+            # itself can't produce a file.
+            if (
+                media.id
+                and media.file_path
+                and not media.file_path.startswith("downloads/")
+            ):
+                logger.warning(
+                    f"[Stream] ffmpeg probe timed out for {media.id}; "
+                    "falling back to full download."
+                )
+                try:
+                    await message.edit_text(_lang["play_downloading"])
+                except MessageNotModified:
+                    pass
+                media.file_path = await yt.download(media.id, video=media.video)
+                if media.file_path:
+                    return await self.play_media(chat_id, message, media, seek_time)
+
+            try:
+                await message.edit_text(_lang["error_no_audio"])
+            except MessageNotModified:
+                pass
+            await self.play_next(chat_id)
         except (ConnectionNotFound, TelegramServerError):
             await self.stop(chat_id)
             try:
