@@ -12,3 +12,5 @@ anony/cookies/*.txt
 *.session-journal
 # Local VPS deploy helpers (contain SSH credentials — never commit)
 .deploy/
+# Local clone of the lily_api repo (has its own git remote — never commit here)
+.api-work/
