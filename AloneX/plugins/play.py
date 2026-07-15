@@ -99,24 +99,21 @@ async def _play_track(
         if cached:
             file.file_path = cached
         else:
-            from AloneX.plugins.settings import get_chat_settings
-            settings = await get_chat_settings(chat_id)
-
-            # Quick Play (default ON): return the SaaS API byte-proxy URL and
-            # let pytgcalls/ffmpeg stream bytes THROUGH the API in real time.
-            # No local download for the first song — playback starts within
-            # ~1s. Queued songs are already being fetched in the background
-            # (see bg_download_task above), so subsequent tracks either play
-            # from their cached file or fall back to the same live-stream path.
+            # Straight to download — no live-stream attempt.
+            #
+            # The SaaS API is neither progressive nor cached: measured
+            # time-to-first-byte is ~13-17 s for *every* request (it runs the
+            # full yt-dlp resolve, buffers the whole file, then dumps it in
+            # ~1.5 s), and re-resolves even the same id seconds later. So a
+            # stream URL can never start playing before its bytes exist, and
+            # handing one to ffmpeg only makes ffmpeg trigger its OWN 17 s
+            # resolve (which then trips its check_stream timeout). Downloading
+            # once is strictly faster and reliable. Instant playback is only
+            # possible when the file is already on local disk (the `cached`
+            # branch above) — keep cleanup off if you want popular songs to
+            # replay instantly.
             await sent.edit_text(msg.lang["play_downloading"])
-            stream_url = None
-            if settings.get("quickplay", True):
-                stream_url = await yt.get_stream_url(file.id, video=video)
-
-            if stream_url:
-                file.file_path = stream_url
-            else:
-                file.file_path = await yt.download(file.id, video=video)
+            file.file_path = await yt.download(file.id, video=video)
 
     await anon.play_media(chat_id=chat_id, message=sent, media=file)
     if not tracks:
