@@ -19,6 +19,15 @@ API_KEY = config.RAILWAY_YT_API_KEY if config.RAILWAY_YT_API_KEY else os.environ
 
 DOWNLOAD_DIR = "downloads"
 
+# How long we wait for the SaaS proxy to produce the first audio bytes before
+# giving up on the live-stream path and downloading instead. A video the API
+# has already resolved returns bytes in ~1-3 s; a *fresh* video needs ~15-20 s
+# of yt-dlp signature work. We deliberately keep this SHORT: if the stream
+# isn't ready almost immediately we download rather than hand ffmpeg an unready
+# URL (which would burn its own ~20 s check_stream timeout and *then* force a
+# download anyway — the ~43 s worst case we're eliminating).
+STREAM_PROBE_TIMEOUT = 7
+
 # Prefer broadly available single-file formats. YouTube increasingly hides some
 # DASH formats behind PO tokens, so strict bestaudio/bestvideo selectors can
 # report "Requested format is not available" even when playable formats exist.
@@ -772,21 +781,22 @@ class YouTube:
                 return await download_song(video_id)
 
     async def get_stream_url(self, video_id: str, video: bool = False) -> str | None:
-        """Resolve a stream URL via the SaaS API (API-only, fast path).
+        """Resolve a SaaS stream URL, but only return it once we've confirmed the
+        API can serve bytes *quickly*.
 
-        We return the SaaS byte-proxy URL immediately without probing. A HEAD /
-        Range=0-1023 GET probe previously ran here to validate the endpoint
-        before handing to ffmpeg, but the probe itself was the latency bottleneck
-        (~15–20 s on Onrender per fresh video id) — exactly the same processing
-        the API would do anyway when ffmpeg later opens the URL. Skipping the
-        probe moves that wait from a bot-blocking phase to ffmpeg's opportunistic
-        buffering phase, so the Telegram "now playing" message and pytgcalls
-        setup complete in <1 s.
+        We send a short Range GET probe (STREAM_PROBE_TIMEOUT s). If the first
+        audio bytes arrive in that window the video is already resolved/cached
+        on the API, so ffmpeg will open it just as fast — we return the URL and
+        playback starts near-instantly.
+
+        If the probe does NOT produce bytes in time (typical for a *fresh* video
+        id the API has never resolved — ~15-20 s of yt-dlp signature work) we
+        return None so the caller downloads the file instead. This avoids
+        handing ffmpeg an unready URL, which would otherwise burn its full ~20 s
+        check_stream timeout and *then* force a download anyway (~43 s total).
 
         The api_key rides in the query string because pytgcalls/ffmpeg cannot be
-        told to send custom headers here. If the API is misconfigured or the
-        video is unavailable, pytgcalls fails at open time and the caller can
-        retry via yt.download() next time.
+        told to send custom headers here.
         """
         if not video_id or len(video_id) < 3:
             return None
@@ -804,8 +814,47 @@ class YouTube:
             else "/api/youtube/play/audio"
         )
         proxy_url = f"{API_URL}{path}?id={video_id}&api_key={API_KEY}"
-        logger.info(f"[Stream API] Fast-path proxy URL {path} for {video_id}")
-        return proxy_url
+
+        logger.info(
+            f"[Stream API] Probing {path} for {video_id} ({STREAM_PROBE_TIMEOUT}s)"
+        )
+        try:
+            timeout = aiohttp.ClientTimeout(total=STREAM_PROBE_TIMEOUT)
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    proxy_url,
+                    headers={"Range": "bytes=0-1023"},
+                    timeout=timeout,
+                ) as resp:
+                    if resp.status >= 400:
+                        logger.warning(
+                            f"[Stream API] {path} probe status {resp.status} "
+                            f"for {video_id}; downloading instead."
+                        )
+                        return None
+                    # Read a small chunk to confirm the API is actually
+                    # streaming bytes, not just stalling after headers.
+                    chunk = await resp.content.read(512)
+                    if not chunk:
+                        logger.warning(
+                            f"[Stream API] {path} probe returned no bytes "
+                            f"for {video_id}; downloading instead."
+                        )
+                        return None
+            logger.info(f"[Stream API] Ready — streaming {path} for {video_id}")
+            return proxy_url
+        except asyncio.TimeoutError:
+            logger.info(
+                f"[Stream API] {path} not ready within {STREAM_PROBE_TIMEOUT}s "
+                f"for {video_id} (fresh video); downloading instead."
+            )
+            return None
+        except Exception as e:
+            logger.warning(
+                f"[Stream API] {path} probe failed for {video_id}: "
+                f"{type(e).__name__}: {e}; downloading instead."
+            )
+            return None
 
     async def _keepalive_ping(self) -> None:
         """Send one lightweight ping to the SaaS API so its Onrender container
