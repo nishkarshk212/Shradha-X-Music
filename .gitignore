@@ -14,3 +14,5 @@ anony/cookies/*.txt
 .deploy/
 # Local clone of the lily_api repo (has its own git remote — never commit here)
 .api-work/
+# Local clone of the pannel website repo (has its own git remote — never commit here)
+.website-work/
